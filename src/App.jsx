@@ -1,0 +1,1573 @@
+import { useState, useRef, useCallback } from "react";
+
+// ─── Storage ──────────────────────────────────────────────────────────
+const S = {};
+function write(k, v) {
+  S[k] = v;
+  try { localStorage.setItem("itl_" + k, JSON.stringify(v)); } catch (_) {}
+}
+function read(k, def) {
+  if (k in S) return S[k];
+  try { const r = localStorage.getItem("itl_" + k); if (r !== null) { S[k] = JSON.parse(r); return S[k]; } } catch (_) {}
+  S[k] = def; return def;
+}
+function useS(k, def) {
+  const [v, sv] = useState(() => read(k, def));
+  const set = useCallback((x) => sv((p) => { const n = typeof x === "function" ? x(p) : x; write(k, n); return n; }), [k]);
+  return [v, set];
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────
+const fmtDate = (d) => (d || new Date()).toISOString().slice(0, 10);
+const td = () => fmtDate();
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DAYS_FULL = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const num = (v) => parseFloat(v) || 0;
+const fmt = (n) => Number(n).toLocaleString();
+
+// ─── Colors ───────────────────────────────────────────────────────────
+const BG    = "#0a0800";       // near-black with warm undertone
+const SURF  = "#110e00";       // dark surface
+const CARD  = "#181200";       // card background
+const BOR   = "#2a1f00";       // border
+const BORHI = "#3d2e00";       // highlighted border
+const LIME  = "#ff7a00";       // PRIMARY ACCENT — orange
+const VIO   = "#ffa040";       // secondary — amber-orange
+const PINK  = "#ff4444";       // danger / red accent
+const AMB   = "#ffcc00";       // gold / yellow
+const CYN   = "#ff9933";       // warm orange-amber
+const TEAL  = "#ffaa55";       // light orange
+const TEXT  = "#ffffff";       // pure white text
+const MID   = "#c4a882";       // warm mid-tone
+const LOW   = "#5a4422";       // muted warm brown
+
+// ─── Base UI ──────────────────────────────────────────────────────────
+const IS = { background: "#1a1200", color: TEXT, border: "1px solid " + BOR, borderRadius: 7, padding: "8px 12px", fontSize: 13, width: "100%", fontFamily: "inherit" };
+
+function In({ style, ...p }) { return <input style={{ ...IS, ...style }} {...p} />; }
+function Ta({ style, ...p }) { return <textarea style={{ ...IS, resize: "vertical", lineHeight: 1.6, ...style }} {...p} />; }
+function Sel({ style, ...p }) { return <select style={{ ...IS, ...style }} {...p} />; }
+
+const BV = { p: { bg: LIME, col: "#fff" }, sec: { bg: SURF, col: MID, bor: BOR }, ghost: { bg: "transparent", col: MID, bor: BOR }, vio: { bg: VIO, col: "#fff" }, pink: { bg: PINK, col: "#fff" }, amb: { bg: AMB, col: "#0a0800" }, cyn: { bg: CYN, col: "#fff" }, teal: { bg: TEAL, col: "#0a0800" }, danger: { bg: "rgba(255,68,68,0.12)", col: PINK, bor: "rgba(255,68,68,0.3)" } };
+
+function Btn({ children, onClick, v = "p", style, disabled }) {
+  const s = BV[v] || BV.p;
+  return (
+    <button onClick={onClick} disabled={disabled} style={{ background: s.bg, color: s.col, border: s.bor ? "1px solid " + s.bor : "none", borderRadius: 8, padding: "8px 18px", fontWeight: 700, fontSize: 13, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.45 : 1, fontFamily: "inherit", ...style }}>
+      {children}
+    </button>
+  );
+}
+
+function Chip({ children, on, click, col }) {
+  const c = col || LIME;
+  return (
+    <button onClick={click} style={{ background: on ? c + "20" : SURF, color: on ? c : MID, border: "1px solid " + (on ? c + "55" : BOR), borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: on ? 700 : 400, cursor: "pointer", fontFamily: "inherit" }}>
+      {children}
+    </button>
+  );
+}
+
+function Box({ done, col, click }) {
+  const c = col || LIME;
+  return (
+    <div onClick={click} style={{ width: 20, height: 20, borderRadius: 5, flexShrink: 0, cursor: "pointer", border: "2px solid " + (done ? c : BOR), background: done ? c : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#fff" }}>
+      {done ? "✓" : ""}
+    </div>
+  );
+}
+
+function PBar({ pct, col, h }) {
+  return (
+    <div style={{ height: h || 4, background: BOR, borderRadius: 2, overflow: "hidden" }}>
+      <div style={{ height: "100%", width: Math.min(100, pct || 0) + "%", background: col || LIME, borderRadius: 2, transition: "width .4s" }} />
+    </div>
+  );
+}
+
+function Stat({ label, value, col, sub }) {
+  return (
+    <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 10, padding: "12px 14px", textAlign: "center" }}>
+      <div style={{ fontSize: 20, fontWeight: 700, color: col || LIME, fontFamily: "monospace" }}>{value}</div>
+      <div style={{ fontSize: 11, color: LOW, marginTop: 2 }}>{label}</div>
+      {sub && <div style={{ fontSize: 10, color: col || LIME, marginTop: 2, opacity: 0.75 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function SH({ children, right }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+      <h2 style={{ fontSize: 18, fontWeight: 700 }}>{children}</h2>
+      {right}
+    </div>
+  );
+}
+
+function FL({ children }) {
+  return <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.13em", textTransform: "uppercase", color: LOW, marginBottom: 5, fontFamily: "monospace" }}>{children}</div>;
+}
+
+function Modal({ onClose, children }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.72)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: CARD, border: "1px solid " + BORHI, borderRadius: 14, padding: 24, width: 360, maxWidth: "93vw", maxHeight: "85vh", overflowY: "auto" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─── Vial Logo ────────────────────────────────────────────────────────
+let VI = 0;
+function Vial({ size = 26 }) {
+  const id = useRef("v" + String(++VI)).current;
+  const s = size;
+  return (
+    <svg width={s} height={s} viewBox="0 0 28 28" fill="none" style={{ flexShrink: 0 }}>
+      <defs>
+        <linearGradient id={id + "a"} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#ff7a00" />
+          <stop offset="100%" stopColor="#ffcc00" />
+        </linearGradient>
+        <linearGradient id={id + "b"} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={VIO} />
+          <stop offset="100%" stopColor={LIME} />
+        </linearGradient>
+      </defs>
+      <rect x="10" y="5" width="8" height="18" rx="4" fill="#151e30" />
+      <rect x="10" y="14" width="8" height="9" rx="4" fill={"url(#" + id + "b)"} />
+      <rect x="10" y="12" width="8" height="3" fill={"url(#" + id + "b)"} opacity=".5" />
+      <circle cx="13" cy="17" r="1" fill="white" opacity=".4" />
+      <circle cx="16" cy="20" r=".6" fill="white" opacity=".3" />
+      <rect x="9" y="2" width="10" height="5" rx="2" fill={"url(#" + id + "a)"} />
+      <line x1="10" y1="11" x2="12" y2="11" stroke="white" strokeWidth=".8" opacity=".3" />
+      <line x1="10" y1="15" x2="12" y2="15" stroke="white" strokeWidth=".8" opacity=".3" />
+      <rect x="11.5" y="6" width="1.5" height="10" rx=".75" fill="white" opacity=".08" />
+    </svg>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// HOME
+// ═════════════════════════════════════════════════════════════════════
+function Home({ go }) {
+  const [prof, setProf] = useS("prof", { name: "", age: "", height: "", weight: "", pos: "", team: "", goal: "", bio: "", photo: "" });
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(prof);
+  const ref = useRef(null);
+
+  const [habits] = useS("habits", []);
+  const [hc]     = useS("hc",     {});
+  const [tasks]  = useS("tasks",  {});
+  const [games]  = useS("games",  []);
+  const [gym]    = useS("gym",    {});
+  const [cal]    = useS("cal",    {});
+  const [jnl]    = useS("jnl",    {});
+  const [sleep]  = useS("sleep",  {});
+  const [prs]    = useS("prs",    []);
+
+  const today = td();
+  const hDone   = habits.filter(h => (hc[today] || {})[h.id]).length;
+  const dayT    = tasks[today] || [];
+  const tDone   = dayT.filter(t => t.done).length;
+  const cals    = ((cal[today] || {}).meals || []).reduce((a, m) => a + num(m.cal), 0);
+  const steps   = num((cal[today] || {}).steps);
+  const wins    = games.filter(g => num(g.myPts) > num(g.oppPts)).length;
+  const gSess   = Object.keys(gym).length;
+  const wDates  = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - d.getDay() + i); return fmtDate(d); });
+  const jDone   = wDates.filter(d => jnl[d]).length;
+  const todSleep = sleep[today];
+
+  const up = k => e => setDraft(p => ({ ...p, [k]: e.target.value }));
+  const save = () => { setProf(draft); setEditing(false); };
+  const onPic = e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = ev => setDraft(p => ({ ...p, photo: ev.target.result })); r.readAsDataURL(f); };
+
+  const NAVS = [
+    { id: "planner",  icon: "📅", label: "Planner",      col: LIME,  info: "Daily, weekly & monthly" },
+    { id: "habits",   icon: "✅", label: "Habits",        col: CYN,   info: hDone + "/" + habits.length + " done today" },
+    { id: "tasks",    icon: "📋", label: "Tasks",         col: VIO,   info: tDone + "/" + dayT.length + " complete" },
+    { id: "gym",      icon: "🏋️", label: "Gym",           col: AMB,   info: gSess + " sessions logged" },
+    { id: "bball",    icon: "🏀", label: "Basketball",    col: PINK,  info: wins + " wins this season" },
+    { id: "cals",     icon: "🔥", label: "Calories",      col: "#ff8c42", info: cals ? fmt(cals) + " kcal today" : "Not logged" },
+    { id: "recovery", icon: "🛌", label: "Recovery",      col: CYN,   info: todSleep ? todSleep.h + "h sleep" : "Log recovery" },
+    { id: "metrics",  icon: "📈", label: "Body Metrics",  col: LIME,  info: "Track weight & composition" },
+    { id: "prs",      icon: "🏆", label: "PRs",           col: AMB,   info: prs.length + " records logged" },
+    { id: "film",     icon: "🎬", label: "Film Room",     col: VIO,   info: "Coaching notes & film" },
+    { id: "reflect",  icon: "📓", label: "Reflections",   col: "#a78fff", info: jDone + "/7 entries this week" },
+  ];
+
+  return (
+    <div style={{ height: "100%", overflowY: "auto", padding: "24px 28px" }}>
+      {/* hero */}
+      <div style={{ background: "linear-gradient(135deg,#120a00,#1a1000,#0a0700)", border: "1px solid " + BORHI, borderRadius: 16, padding: 24, marginBottom: 24, position: "relative", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: -60, right: -60, width: 200, height: 200, borderRadius: "50%", background: "radial-gradient(circle,rgba(255,122,0,.09),transparent 70%)", pointerEvents: "none" }} />
+        <div style={{ display: "flex", gap: 22, alignItems: "flex-start", flexWrap: "wrap", position: "relative" }}>
+          {/* photo */}
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            <div onClick={() => editing && ref.current && ref.current.click()} style={{ width: 100, height: 100, borderRadius: 12, overflow: "hidden", border: "2px solid " + (editing ? LIME : BORHI), background: SURF, display: "flex", alignItems: "center", justifyContent: "center", cursor: editing ? "pointer" : "default" }}>
+              {prof.photo ? <img src={prof.photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ textAlign: "center", color: LOW }}><div style={{ fontSize: 32 }}>👤</div>{editing && <div style={{ fontSize: 9, marginTop: 3, fontFamily: "monospace" }}>UPLOAD</div>}</div>}
+            </div>
+            {editing && <div onClick={() => ref.current && ref.current.click()} style={{ position: "absolute", bottom: -8, right: -8, background: LIME, borderRadius: "50%", width: 26, height: 26, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, cursor: "pointer" }}>📷</div>}
+            <input ref={ref} type="file" accept="image/*" onChange={onPic} style={{ display: "none" }} />
+          </div>
+          {/* info */}
+          <div style={{ flex: 1, minWidth: 180 }}>
+            {editing ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <In value={draft.name} onChange={up("name")} placeholder="Full Name" style={{ flex: 2, minWidth: 130, fontSize: 16, fontWeight: 700 }} />
+                  <In value={draft.age} onChange={up("age")} placeholder="Age" style={{ width: 65 }} />
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <In value={draft.height} onChange={up("height")} placeholder="Height" />
+                  <In value={draft.weight} onChange={up("weight")} placeholder="Weight (lbs)" />
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <In value={draft.pos} onChange={up("pos")} placeholder="Position" />
+                  <In value={draft.team} onChange={up("team")} placeholder="Team / School" />
+                </div>
+                <In value={draft.goal} onChange={up("goal")} placeholder="Main goal..." />
+                <Ta value={draft.bio} onChange={up("bio")} placeholder="Short bio..." rows={2} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn onClick={save}>Save</Btn>
+                  <Btn onClick={() => { setDraft(prof); setEditing(false); }} v="sec">Cancel</Btn>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                  <div>
+                    <h1 style={{ fontSize: 24, fontWeight: 700 }}>{prof.name || "Your Name"}</h1>
+                    {prof.pos && <div style={{ color: LIME, fontWeight: 600, fontSize: 13, marginTop: 2 }}>{prof.pos}{prof.team ? " · " + prof.team : ""}</div>}
+                  </div>
+                  <Btn onClick={() => { setDraft(prof); setEditing(true); }} v="ghost" style={{ fontSize: 12, padding: "5px 12px" }}>✏ Edit</Btn>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                  {[prof.age && ["Age", prof.age], prof.height && ["Ht", prof.height], prof.weight && ["Wt", prof.weight + " lbs"]].filter(Boolean).map(([l, val]) => (
+                    <div key={l} style={{ background: "rgba(255,122,0,.1)", border: "1px solid rgba(180,255,87,.18)", borderRadius: 6, padding: "3px 10px", fontSize: 12 }}>
+                      <span style={{ color: LOW }}>{l}: </span><span style={{ fontWeight: 600, fontFamily: "monospace" }}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+                {prof.goal && <div style={{ background: "rgba(255,122,0,.1)", border: "1px solid rgba(180,255,87,.22)", borderRadius: 8, padding: "7px 12px", fontSize: 13, marginBottom: 8, color: LIME }}>🎯 {prof.goal}</div>}
+                {prof.bio && <p style={{ color: MID, fontSize: 13, lineHeight: 1.7 }}>{prof.bio}</p>}
+                {!prof.name && <Btn onClick={() => { setDraft(prof); setEditing(true); }} v="ghost" style={{ marginTop: 8 }}>+ Set up your profile</Btn>}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* snapshot */}
+      <FL>Today at a glance</FL>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(110px,1fr))", gap: 10, marginBottom: 28 }}>
+        <Stat label="Habits"   value={hDone + "/" + habits.length}      col={LIME}  sub={habits.length ? Math.round(hDone / habits.length * 100) + "%" : ""} />
+        <Stat label="Tasks"    value={tDone + "/" + dayT.length}         col={VIO}   />
+        <Stat label="Calories" value={cals ? fmt(cals) : "—"}           col={AMB}   sub="kcal" />
+        <Stat label="Steps"    value={steps ? fmt(steps) : "—"}          col={CYN}   />
+        <Stat label="Sleep"    value={todSleep ? todSleep.h + "h" : "—"} col={TEAL}  sub={todSleep ? "RPE " + (todSleep.rpe || "—") : "not logged"} />
+        <Stat label="Journal"  value={jDone + "/7"}                      col={PINK}  sub="this week" />
+      </div>
+
+      {/* nav grid */}
+      <FL>Sections</FL>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 12 }}>
+        {NAVS.map(item => (
+          <button key={item.id} onClick={() => go(item.id)} style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: "16px 18px", textAlign: "left", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, color: TEXT, transition: "border-color .2s", fontFamily: "inherit" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = item.col + "55"; e.currentTarget.style.transform = "translateY(-1px)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = BOR; e.currentTarget.style.transform = "none"; }}>
+            <div style={{ width: 42, height: 42, borderRadius: 10, background: item.col + "18", border: "1px solid " + item.col + "33", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>{item.icon}</div>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>{item.label}</div>
+              <div style={{ fontSize: 11, color: LOW }}>{item.info}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// PLANNER
+// ═════════════════════════════════════════════════════════════════════
+function Planner() {
+  const [mode, setMode]    = useState("week");
+  const [evs, setEvs]      = useS("evs", {});
+  const [focus, setFocus]  = useState(td());
+  const [modal, setModal]  = useState(null);
+  const [eTitle, setETitle] = useState("");
+  const [eTime, setETime]   = useState("09:00");
+  const [eDur, setEDur]     = useState("60");
+  const [eCol, setECol]     = useState(LIME);
+  const [eRep, setERep]     = useState("none");
+  const [tasks] = useS("tasks", {});
+  const [gym]   = useS("gym",   {});
+
+  const COLS = [LIME, VIO, PINK, AMB, CYN, "#e879f9"];
+  const SLOTS = ["6AM","7AM","8AM","9AM","10AM","11AM","12PM","1PM","2PM","3PM","4PM","5PM","6PM","7PM","8PM","9PM"];
+  const slotH = s => s === "12PM" ? 12 : s.includes("PM") ? parseInt(s) + 12 : parseInt(s);
+
+  const getDay = ds => {
+    const direct = evs[ds] || [];
+    const extra = [];
+    // recurring
+    Object.entries(evs).forEach(([k, arr]) => {
+      (arr || []).forEach(ev => {
+        if (!ev.rep || ev.rep === "none" || k === ds) return;
+        const diff = Math.round((new Date(ds + "T12:00:00") - new Date(k + "T12:00:00")) / 86400000);
+        if (diff <= 0) return;
+        if (ev.rep === "daily" || (ev.rep === "weekly" && diff % 7 === 0)) extra.push({ ...ev, id: ev.id + "_" + ds, _r: true });
+      });
+    });
+    // tasks
+    (tasks[ds] || []).forEach(t => { if (t.time) extra.push({ id: "t_" + t.id, title: "📋 " + t.text, color: VIO, time: t.time, _t: true }); });
+    // gym
+    const g = gym[ds];
+    if (g && (g.exercises || []).length) extra.push({ id: "g_" + ds, title: "🏋️ Gym — " + (g.exercises || []).slice(0, 2).map(e => e.name).join(", "), color: AMB, time: g.schedTime || "", _g: true });
+    return [...direct, ...extra].sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+  };
+
+  const addEv = () => {
+    if (!eTitle.trim() || !modal) return;
+    const ds = modal.ds;
+    setEvs(p => ({ ...p, [ds]: [...(p[ds] || []), { id: Date.now(), title: eTitle, color: eCol, time: eTime, dur: eDur, rep: eRep }] }));
+    setModal(null); setETitle(""); setETime("09:00"); setEDur("60"); setECol(LIME); setERep("none");
+  };
+  const delEv = (ds, id) => setEvs(p => ({ ...p, [ds]: (p[ds] || []).filter(e => e.id !== id) }));
+
+  const Chip2 = ({ ev, ds }) => (
+    <div style={{ background: ev.color + "22", borderLeft: "3px solid " + ev.color, borderRadius: 3, padding: "2px 6px", marginBottom: 2, fontSize: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</span>
+      {!ev._r && !ev._t && !ev._g && <span onClick={() => delEv(ds, ev.id)} style={{ cursor: "pointer", color: LOW, marginLeft: 4, flexShrink: 0 }}>×</span>}
+    </div>
+  );
+
+  // ── Month ──
+  const Month = () => {
+    const b = new Date(focus + "T12:00:00"), yr = b.getFullYear(), mo = b.getMonth();
+    const fd = new Date(yr, mo, 1).getDay(), dim = new Date(yr, mo + 1, 0).getDate();
+    const cells = []; for (let i = 0; i < fd; i++) cells.push(null); for (let d = 1; d <= dim; d++) cells.push(new Date(yr, mo, d));
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexShrink: 0 }}>
+          <Btn onClick={() => { const d = new Date(yr, mo - 1, 1); setFocus(fmtDate(d)); }} v="ghost" style={{ padding: "5px 12px" }}>← Prev</Btn>
+          <span style={{ flex: 1, textAlign: "center", fontWeight: 700, fontSize: 16 }}>{MONTHS[mo]} {yr}</span>
+          <Btn onClick={() => { const d = new Date(yr, mo + 1, 1); setFocus(fmtDate(d)); }} v="ghost" style={{ padding: "5px 12px" }}>Next →</Btn>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 1, flexShrink: 0 }}>
+          {DAYS.map(d => <div key={d} style={{ textAlign: "center", fontSize: 10, color: LOW, padding: "3px 0", fontFamily: "monospace" }}>{d}</div>)}
+        </div>
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(7,1fr)", gridAutoRows: "1fr", gap: 2, overflow: "hidden" }}>
+          {cells.map((d, i) => {
+            if (!d) return <div key={"e" + i} />;
+            const ds = fmtDate(d), isT = ds === td(), dayEvs = getDay(ds);
+            return (
+              <div key={ds} onClick={() => { setFocus(ds); setMode("day"); }} style={{ background: isT ? "rgba(255,122,0,.1)" : CARD, border: "1px solid " + (isT ? LIME : BOR), borderRadius: 7, padding: "4px 4px", cursor: "pointer", overflow: "hidden" }}>
+                <div style={{ fontSize: 12, fontWeight: isT ? 700 : 400, color: isT ? LIME : MID, fontFamily: "monospace", marginBottom: 2 }}>{d.getDate()}</div>
+                {dayEvs.slice(0, 2).map(ev => <div key={ev.id} style={{ background: ev.color + "25", borderLeft: "2px solid " + ev.color, borderRadius: 2, padding: "1px 3px", fontSize: 8, marginBottom: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ev.title}</div>)}
+                {dayEvs.length > 2 && <div style={{ fontSize: 8, color: LOW }}>+{dayEvs.length - 2}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // ── Day ──
+  const Day = () => {
+    const d = new Date(focus + "T12:00:00"), dayEvs = getDay(focus);
+    const prev = () => { const p = new Date(d); p.setDate(d.getDate() - 1); setFocus(fmtDate(p)); };
+    const next = () => { const p = new Date(d); p.setDate(d.getDate() + 1); setFocus(fmtDate(p)); };
+    return (
+      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexShrink: 0 }}>
+          <Btn onClick={prev} v="ghost" style={{ padding: "5px 12px" }}>← Prev</Btn>
+          <span style={{ flex: 1, textAlign: "center", fontWeight: 700, fontSize: 14 }}>{DAYS_FULL[d.getDay()]} · {d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+          <Btn onClick={next} v="ghost" style={{ padding: "5px 12px" }}>Next →</Btn>
+          <Btn onClick={() => setModal({ ds: focus })} style={{ padding: "6px 14px", fontSize: 12 }}>+ Add</Btn>
+        </div>
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {SLOTS.map(slot => {
+            const sEvs = dayEvs.filter(ev => ev.time && parseInt(ev.time.split(":")[0]) === slotH(slot));
+            return (
+              <div key={slot} onClick={() => setModal({ ds: focus, slot })} style={{ display: "flex", gap: 10, minHeight: 46, borderBottom: "1px solid " + BOR, cursor: "pointer" }}>
+                <div style={{ width: 44, flexShrink: 0, fontSize: 9, color: LOW, fontFamily: "monospace", paddingTop: 4, textAlign: "right", paddingRight: 8 }}>{slot}</div>
+                <div style={{ flex: 1, padding: "3px 0" }}>{sEvs.map(ev => <Chip2 key={ev.id} ev={ev} ds={focus} />)}</div>
+              </div>
+            );
+          })}
+          {dayEvs.filter(ev => !ev.time).length > 0 && (
+            <div style={{ padding: "12px 14px" }}>
+              <FL>All Day / Unscheduled</FL>
+              {dayEvs.filter(ev => !ev.time).map(ev => <Chip2 key={ev.id} ev={ev} ds={focus} />)}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ── Week ──
+  const Week = () => {
+    const b = new Date(focus + "T12:00:00"), day = b.getDay();
+    const week = Array.from({ length: 7 }, (_, i) => { const n = new Date(b); n.setDate(b.getDate() - day + i); return n; });
+    return (
+      <div style={{ flex: 1, overflow: "auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "50px repeat(7,minmax(88px,1fr))", minWidth: 720 }}>
+          <div />
+          {week.map((d, i) => {
+            const ds = fmtDate(d), isT = ds === td();
+            return (
+              <div key={i} onClick={() => { setFocus(ds); setMode("day"); }} style={{ textAlign: "center", padding: "7px 4px", borderBottom: "2px solid " + (isT ? LIME : BOR), background: isT ? "rgba(255,122,0,.06)" : "transparent", cursor: "pointer", borderRadius: "7px 7px 0 0" }}>
+                <div style={{ fontSize: 9, color: LOW, fontFamily: "monospace" }}>{DAYS[d.getDay()]}</div>
+                <div style={{ fontWeight: 700, fontSize: 14, fontFamily: "monospace", color: isT ? LIME : TEXT }}>{d.getDate()}</div>
+              </div>
+            );
+          })}
+          {SLOTS.map(slot => (
+            <>
+              <div key={"t" + slot} style={{ padding: "4px 6px", fontSize: 8, color: LOW, fontFamily: "monospace", borderRight: "1px solid " + BOR, display: "flex", alignItems: "center" }}>{slot}</div>
+              {week.map((d, di) => {
+                const ds = fmtDate(d);
+                const sEvs = getDay(ds).filter(ev => ev.time && parseInt(ev.time.split(":")[0]) === slotH(slot));
+                return (
+                  <div key={di + slot} onClick={() => setModal({ ds, slot })} style={{ minHeight: 36, border: "1px solid " + BOR, padding: 2, cursor: "pointer" }}>
+                    {sEvs.map(ev => <Chip2 key={ev.id} ev={ev} ds={ds} />)}
+                  </div>
+                );
+              })}
+            </>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", padding: "16px 24px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexShrink: 0, flexWrap: "wrap" }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700 }}>Planner</h2>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[["day","Day"],["week","Week"],["month","Month"]].map(([v, l]) => <Chip key={v} on={mode === v} click={() => setMode(v)}>{l}</Chip>)}
+        </div>
+        {mode !== "month" && <Btn onClick={() => setModal({ ds: mode === "day" ? focus : td() })} style={{ padding: "6px 14px", fontSize: 12 }}>+ Add</Btn>}
+      </div>
+
+      {mode === "month" && <Month />}
+      {mode === "day"   && <div style={{ flex: 1, overflow: "hidden" }}><Day /></div>}
+      {mode === "week"  && <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}><Week /></div>}
+
+      {modal && (
+        <Modal onClose={() => setModal(null)}>
+          <div style={{ fontFamily: "monospace", fontSize: 11, color: LOW, marginBottom: 12 }}>{modal.ds}{modal.slot ? " · " + modal.slot : ""}</div>
+          <FL>Title</FL>
+          <In value={eTitle} onChange={e => setETitle(e.target.value)} placeholder="Event name" style={{ marginBottom: 10 }} onKeyDown={e => e.key === "Enter" && addEv()} />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+            <div><FL>Time</FL><In type="time" value={eTime} onChange={e => setETime(e.target.value)} /></div>
+            <div><FL>Duration (min)</FL><In type="number" value={eDur} onChange={e => setEDur(e.target.value)} /></div>
+          </div>
+          <FL>Repeat</FL>
+          <Sel value={eRep} onChange={e => setERep(e.target.value)} style={{ width: "100%", marginBottom: 12 }}>
+            <option value="none">No repeat</option>
+            <option value="daily">Daily</option>
+            <option value="weekly">Weekly</option>
+          </Sel>
+          <FL>Color</FL>
+          <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+            {COLS.map(c => <div key={c} onClick={() => setECol(c)} style={{ width: 24, height: 24, borderRadius: "50%", background: c, cursor: "pointer", outline: eCol === c ? "2px solid #fff" : "none", outlineOffset: 2 }} />)}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn onClick={addEv}>Add</Btn>
+            <Btn onClick={() => setModal(null)} v="sec">Cancel</Btn>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// HABITS
+// ═════════════════════════════════════════════════════════════════════
+function Habits() {
+  const [habits, setHabits] = useS("habits", [{ id: 1, name: "Morning Water", icon: "💧" }, { id: 2, name: "Meditate", icon: "🧘" }, { id: 3, name: "Read 20min", icon: "📚" }, { id: 4, name: "No Social Media AM", icon: "📵" }]);
+  const [hc, setHc] = useS("hc", {});
+  const [newN, setNewN] = useState("");
+  const [newI, setNewI] = useState("⭐");
+  const [adding, setAdding] = useState(false);
+  const today = td(), tc = hc[today] || {};
+  const done = habits.filter(h => tc[h.id]).length;
+  const EMOJIS = "⭐🏃💪🧠💧🥗😴📚🎯🙏🎨🎵💊🌅❄️".split("");
+  const tog = id => setHc(p => ({ ...p, [today]: { ...(p[today] || {}), [id]: !(p[today] || {})[id] } }));
+  const add = () => { if (!newN.trim()) return; setHabits(p => [...p, { id: Date.now(), name: newN, icon: newI }]); setNewN(""); setAdding(false); };
+  const last7 = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); const k = fmtDate(d), dc = hc[k] || {}; return { l: DAYS[d.getDay()], p: habits.length ? Math.round(habits.filter(h => dc[h.id]).length / habits.length * 100) : 0 }; });
+
+  return (
+    <div style={{ height: "100%", display: "flex", gap: 20, padding: "16px 24px 24px", overflow: "hidden" }}>
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        <SH right={<div style={{ background: "rgba(255,122,0,.12)", border: "1px solid rgba(180,255,87,.25)", borderRadius: 8, padding: "4px 14px", fontFamily: "monospace", fontWeight: 700, fontSize: 18, color: LIME }}>{done}/{habits.length}</div>}>Daily Habits</SH>
+        <PBar pct={habits.length ? done / habits.length * 100 : 0} col={LIME} />
+        <div style={{ height: 12 }} />
+        {habits.map(h => {
+          const isDone = !!(hc[today] || {})[h.id];
+          return (
+            <div key={h.id} onClick={() => tog(h.id)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", background: isDone ? "rgba(255,122,0,.08)" : CARD, border: "1px solid " + (isDone ? "rgba(255,122,0,.3)" : BOR), borderRadius: 10, marginBottom: 8, cursor: "pointer" }}>
+              <span style={{ fontSize: 20 }}>{h.icon}</span>
+              <span style={{ flex: 1, fontWeight: 500, textDecoration: isDone ? "line-through" : "none", color: isDone ? LOW : TEXT }}>{h.name}</span>
+              <Box done={isDone} click={e => { e.stopPropagation(); tog(h.id); }} />
+              <button onClick={e => { e.stopPropagation(); setHabits(p => p.filter(x => x.id !== h.id)); }} style={{ background: "none", border: "none", color: LOW, fontSize: 16, cursor: "pointer" }}>×</button>
+            </div>
+          );
+        })}
+        {adding ? (
+          <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 10, padding: 14 }}>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
+              {EMOJIS.map(e => <span key={e} onClick={() => setNewI(e)} style={{ fontSize: 18, cursor: "pointer", padding: "3px 4px", borderRadius: 5, background: newI === e ? "rgba(255,122,0,.25)" : "transparent" }}>{e}</span>)}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <In value={newN} onChange={e => setNewN(e.target.value)} placeholder="Habit name" style={{ flex: 1 }} onKeyDown={e => e.key === "Enter" && add()} />
+              <Btn onClick={add}>Add</Btn>
+              <Btn onClick={() => setAdding(false)} v="sec">✕</Btn>
+            </div>
+          </div>
+        ) : (
+          <button onClick={() => setAdding(true)} style={{ width: "100%", border: "1px dashed " + BOR, background: "none", color: LOW, borderRadius: 10, padding: 10, cursor: "pointer", fontSize: 13, fontFamily: "inherit" }}>+ Add Habit</button>
+        )}
+      </div>
+      <div style={{ width: 160, flexShrink: 0 }}>
+        <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 16 }}>
+          <FL>7-Day Rate</FL>
+          <div style={{ display: "flex", gap: 5, alignItems: "flex-end", height: 80 }}>
+            {last7.map((x, i) => (
+              <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, height: "100%", justifyContent: "flex-end" }}>
+                <div style={{ width: "100%", height: x.p + "%", minHeight: x.p ? 3 : 0, background: LIME, borderRadius: 2, opacity: 0.4 + x.p * 0.006 }} />
+                <div style={{ fontSize: 8, color: LOW, fontFamily: "monospace" }}>{x.l}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// TASKS
+// ═════════════════════════════════════════════════════════════════════
+function Tasks() {
+  const [tasks, setTasks] = useS("tasks", {});
+  const [text, setText] = useState(""), [pri, setPri] = useState("med"), [cat, setCat] = useState("General"), [date, setDate] = useState(td()), [time, setTime] = useState(""), [rep, setRep] = useState("none");
+  const today = td(), list = tasks[today] || [];
+  const upd = t => setTasks(p => ({ ...p, [today]: t }));
+  const add = () => { if (!text.trim()) return; upd([...list, { id: Date.now(), text, pri, cat, done: false, date, time, rep }]); setText(""); setTime(""); };
+  const tog = id => upd(list.map(t => t.id === id ? { ...t, done: !t.done } : t));
+  const del = id => upd(list.filter(t => t.id !== id));
+  const PC = { high: PINK, med: AMB, low: LIME };
+  const done = list.filter(t => t.done).length;
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", padding: "16px 24px 24px" }}>
+      <SH right={<span style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 18, color: done === list.length && list.length > 0 ? LIME : VIO }}>{done}/{list.length}</span>}>Daily Tasks</SH>
+      <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 10, padding: 12, marginBottom: 14, flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginBottom: 8 }}>
+          <In value={text} onChange={e => setText(e.target.value)} placeholder="Add a task..." style={{ flex: 2, minWidth: 160 }} onKeyDown={e => e.key === "Enter" && add()} />
+          <Sel value={pri} onChange={e => setPri(e.target.value)} style={{ flex: 1, minWidth: 90 }}>
+            <option value="high">🔴 High</option><option value="med">🟡 Med</option><option value="low">🟢 Low</option>
+          </Sel>
+          <Sel value={cat} onChange={e => setCat(e.target.value)} style={{ flex: 1, minWidth: 100 }}>
+            {["General","Work","Health","Personal","Learning"].map(c => <option key={c}>{c}</option>)}
+          </Sel>
+        </div>
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center" }}>
+          <In type="date" value={date} onChange={e => setDate(e.target.value)} style={{ width: 140 }} />
+          <In type="time" value={time} onChange={e => setTime(e.target.value)} style={{ width: 110 }} />
+          <Sel value={rep} onChange={e => setRep(e.target.value)}>
+            <option value="none">No repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option>
+          </Sel>
+          <Btn onClick={add}>+ Add</Btn>
+        </div>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {["high","med","low"].map(p => {
+          const g = list.filter(t => t.pri === p); if (!g.length) return null;
+          return (
+            <div key={p} style={{ marginBottom: 18 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <div style={{ width: 6, height: 6, borderRadius: "50%", background: PC[p] }} />
+                <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: LOW, fontFamily: "monospace" }}>{p === "med" ? "MEDIUM" : p.toUpperCase()}</span>
+              </div>
+              {g.map(t => (
+                <div key={t.id} onClick={() => tog(t.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: t.done ? "rgba(255,122,0,.06)" : CARD, border: "1px solid " + (t.done ? "rgba(255,122,0,.18)" : BOR), borderRadius: 9, marginBottom: 5, cursor: "pointer" }}>
+                  <Box done={t.done} col={PC[t.pri]} click={e => { e.stopPropagation(); tog(t.id); }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ textDecoration: t.done ? "line-through" : "none", color: t.done ? LOW : TEXT, fontSize: 14 }}>{t.text}</div>
+                    {(t.time || (t.rep && t.rep !== "none")) && <div style={{ fontSize: 10, color: LOW, fontFamily: "monospace", marginTop: 2 }}>{t.date} {t.time}{t.rep !== "none" ? " · ↻ " + t.rep : ""}</div>}
+                  </div>
+                  <span style={{ fontSize: 10, color: LOW, background: SURF, borderRadius: 4, padding: "2px 7px", fontFamily: "monospace" }}>{t.cat}</span>
+                  <button onClick={e => { e.stopPropagation(); del(t.id); }} style={{ background: "none", border: "none", color: LOW, cursor: "pointer", fontSize: 14 }}>×</button>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+        {!list.length && <div style={{ textAlign: "center", color: LOW, padding: "48px 0", fontSize: 14 }}>No tasks yet 🎯</div>}
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// GYM
+// ═════════════════════════════════════════════════════════════════════
+function Gym() {
+  const [gym, setGym]         = useS("gym", {});
+  const [tpls, setTpls]       = useS("gymTpls", { "Push Day": [{ name: "Bench Press", sets: 4, reps: "8-10" }, { name: "Overhead Press", sets: 3, reps: "8-10" }, { name: "Incline DB", sets: 3, reps: "10-12" }, { name: "Tricep Pushdown", sets: 3, reps: "12-15" }], "Pull Day": [{ name: "Barbell Row", sets: 4, reps: "6-8" }, { name: "Pull-ups", sets: 3, reps: "8-12" }, { name: "Face Pulls", sets: 3, reps: "15" }, { name: "Bicep Curl", sets: 3, reps: "10-12" }], "Leg Day": [{ name: "Squat", sets: 4, reps: "6-8" }, { name: "Romanian DL", sets: 3, reps: "8-10" }, { name: "Leg Press", sets: 3, reps: "12-15" }, { name: "Calf Raises", sets: 4, reps: "15-20" }] });
+  const [evs, setEvs]         = useS("evs", {});
+  const [tab, setTab]         = useState("log");
+  const [day, setDay]         = useState(td());
+  const [sel, setSel]         = useState("");
+  const [exN, setExN]         = useState(""), [exS, setExS] = useState(3), [exR, setExR] = useState("10");
+  const [sd, setSd]           = useState(td()), [st, setSt] = useState("10:00");
+  const [editT, setEditT]     = useState(null);
+  const [newTN, setNewTN]     = useState("");
+
+  const log = gym[day] || { exercises: [], dur: "", schedTime: "" };
+  const upd = l => setGym(p => ({ ...p, [day]: l }));
+  const load = () => { if (!sel || !tpls[sel]) return; upd({ ...log, exercises: tpls[sel].map(e => ({ id: Date.now() + Math.random(), name: e.name, defR: e.reps, sets: Array.from({ length: e.sets }, (_, i) => ({ i: i + 1, w: "", r: "", done: false })) })) }); };
+  const addEx = () => { if (!exN.trim()) return; upd({ ...log, exercises: [...log.exercises, { id: Date.now(), name: exN, defR: exR, sets: Array.from({ length: exS }, (_, i) => ({ i: i + 1, w: "", r: "", done: false })) }] }); setExN(""); };
+  const updSet = (eid, si, f, v) => upd({ ...log, exercises: log.exercises.map(ex => ex.id !== eid ? ex : { ...ex, sets: ex.sets.map((s, idx) => idx !== si ? s : { ...s, [f]: v }) }) });
+  const vol = log.exercises.reduce((a, ex) => a + ex.sets.reduce((b, s) => b + num(s.w) * num(s.r), 0), 0);
+  const sched = () => {
+    const title = "🏋️ " + (log.exercises.slice(0, 2).map(e => e.name).join(", ") || "Gym Session");
+    setEvs(p => ({ ...p, [sd]: [...(p[sd] || []), { id: Date.now(), title, color: AMB, time: st, dur: "60", rep: "none" }] }));
+    upd({ ...log, schedTime: st });
+    alert("Added to planner: " + sd + " @ " + st);
+  };
+
+  const TplEd = ({ name }) => {
+    const [n2, setN2] = useState(""), [s2, setS2] = useState(3), [r2, setR2] = useState("10");
+    const ex2 = tpls[name] || [];
+    const upT = exs => setTpls(p => ({ ...p, [name]: exs }));
+    return (
+      <div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+          <Btn onClick={() => setEditT(null)} v="ghost" style={{ padding: "5px 12px" }}>← Back</Btn>
+          <span style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>{name}</span>
+          <Btn onClick={() => { const nn = window.prompt("Rename:", name); if (nn && nn !== name) { setTpls(p => { const nx = { ...p }; nx[nn] = nx[name]; delete nx[name]; return nx; }); setEditT(nn); } }} v="ghost" style={{ fontSize: 12 }}>✏ Rename</Btn>
+          <Btn onClick={() => { if (window.confirm("Delete '" + name + "'?")) { setTpls(p => { const nx = { ...p }; delete nx[name]; return nx; }); setEditT(null); } }} v="danger" style={{ fontSize: 12 }}>🗑 Delete</Btn>
+        </div>
+        {ex2.map((ex, i) => (
+          <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", background: CARD, border: "1px solid " + BOR, borderRadius: 9, padding: "10px 12px", marginBottom: 8 }}>
+            <In value={ex.name} onChange={e => upT(ex2.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} style={{ flex: 2 }} />
+            <In type="number" value={ex.sets} onChange={e => upT(ex2.map((x, j) => j === i ? { ...x, sets: parseInt(e.target.value) || 3 } : x))} style={{ width: 60 }} placeholder="Sets" />
+            <In value={ex.reps} onChange={e => upT(ex2.map((x, j) => j === i ? { ...x, reps: e.target.value } : x))} style={{ width: 70 }} placeholder="Reps" />
+            <button onClick={() => upT(ex2.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: LOW, cursor: "pointer", fontSize: 16 }}>×</button>
+          </div>
+        ))}
+        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+          <In value={n2} onChange={e => setN2(e.target.value)} placeholder="Exercise name" style={{ flex: 2, minWidth: 120 }} />
+          <In type="number" value={s2} onChange={e => setS2(parseInt(e.target.value) || 3)} style={{ width: 60 }} placeholder="Sets" />
+          <In value={r2} onChange={e => setR2(e.target.value)} style={{ width: 70 }} placeholder="Reps" />
+          <Btn onClick={() => { if (n2.trim()) { upT([...ex2, { name: n2, sets: s2, reps: r2 }]); setN2(""); } }}>+ Add</Btn>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", padding: "16px 24px 24px" }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexShrink: 0, flexWrap: "wrap" }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700 }}>Gym</h2>
+        <Chip on={tab === "log"} click={() => setTab("log")}>📋 Log</Chip>
+        <Chip on={tab === "tpls"} col={AMB} click={() => setTab("tpls")}>⚡ Templates</Chip>
+      </div>
+
+      {tab === "tpls" ? (
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {editT ? <TplEd name={editT} /> : (
+            <div>
+              {Object.keys(tpls).map(name => (
+                <div key={name} style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontWeight: 700, fontSize: 15 }}>{name}</span>
+                    <Btn onClick={() => setEditT(name)} v="ghost" style={{ fontSize: 12, padding: "5px 12px", color: LIME, borderColor: LIME + "44" }}>✏ Edit</Btn>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {(tpls[name] || []).map((ex, i) => <div key={i} style={{ background: SURF, border: "1px solid " + BOR, borderRadius: 6, padding: "3px 9px", fontSize: 12 }}>{ex.name} {ex.sets}×{ex.reps}</div>)}
+                  </div>
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <In value={newTN} onChange={e => setNewTN(e.target.value)} placeholder="New template name..." style={{ flex: 1 }} />
+                <Btn onClick={() => { if (newTN.trim()) { setTpls(p => ({ ...p, [newTN]: [] })); setEditT(newTN); setNewTN(""); } }}>+ Create</Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <In type="date" value={day} onChange={e => setDay(e.target.value)} style={{ width: 140 }} />
+            <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 8, padding: "5px 12px", fontSize: 12, fontFamily: "monospace" }}>VOL <span style={{ color: LIME, fontWeight: 700 }}>{fmt(vol)}</span> lbs</div>
+            <In value={log.dur || ""} onChange={e => upd({ ...log, dur: e.target.value })} placeholder="Duration" style={{ width: 100 }} />
+            <Sel value={sel} onChange={e => setSel(e.target.value)}>
+              <option value="">Load template...</option>
+              {Object.keys(tpls).map(t => <option key={t}>{t}</option>)}
+            </Sel>
+            <Btn onClick={load} v="amb">Load</Btn>
+          </div>
+          <div style={{ background: "rgba(255,122,0,.07)", border: "1px solid rgba(255,187,61,.22)", borderRadius: 10, padding: "10px 14px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: AMB, fontWeight: 600 }}>📅 Schedule:</span>
+            <In type="date" value={sd} onChange={e => setSd(e.target.value)} style={{ width: 140 }} />
+            <In type="time" value={st} onChange={e => setSt(e.target.value)} style={{ width: 110 }} />
+            <Btn onClick={sched} v="amb" style={{ fontSize: 12, padding: "6px 14px" }}>→ Add to Planner</Btn>
+          </div>
+          {log.exercises.map(ex => (
+            <div key={ex.id} style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, overflow: "hidden" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid " + BOR, background: "rgba(255,122,0,.05)" }}>
+                <span style={{ fontWeight: 700 }}>{ex.name}</span>
+                <button onClick={() => upd({ ...log, exercises: log.exercises.filter(e => e.id !== ex.id) })} style={{ background: "none", border: "none", color: LOW, cursor: "pointer", fontSize: 16 }}>×</button>
+              </div>
+              <div style={{ padding: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "26px 1fr 1fr 34px", gap: 6, marginBottom: 6 }}>
+                  {["#","LBS","REPS","✓"].map(h => <span key={h} style={{ fontSize: 9, color: LOW, fontWeight: 700, fontFamily: "monospace" }}>{h}</span>)}
+                </div>
+                {ex.sets.map((s, si) => (
+                  <div key={si} style={{ display: "grid", gridTemplateColumns: "26px 1fr 1fr 34px", gap: 6, marginBottom: 6, alignItems: "center" }}>
+                    <span style={{ color: LOW, fontSize: 11, fontFamily: "monospace" }}>{s.i}</span>
+                    <In value={s.w} onChange={e => updSet(ex.id, si, "w", e.target.value)} placeholder="0" style={{ padding: "5px 8px", fontSize: 12 }} />
+                    <In value={s.r} onChange={e => updSet(ex.id, si, "r", e.target.value)} placeholder={ex.defR} style={{ padding: "5px 8px", fontSize: 12 }} />
+                    <Box done={s.done} click={() => updSet(ex.id, si, "done", !s.done)} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div style={{ background: CARD, border: "1px dashed " + BOR, borderRadius: 12, padding: 12 }}>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+              <In value={exN} onChange={e => setExN(e.target.value)} placeholder="Exercise name" style={{ flex: 2, minWidth: 120 }} />
+              <In type="number" value={exS} onChange={e => setExS(parseInt(e.target.value) || 3)} style={{ width: 60 }} />
+              <In value={exR} onChange={e => setExR(e.target.value)} style={{ width: 65 }} placeholder="Reps" />
+              <Btn onClick={addEx} v="amb">+ Add</Btn>
+            </div>
+          </div>
+          <Ta value={log.note || ""} onChange={e => upd({ ...log, note: e.target.value })} placeholder="Session notes, PRs..." rows={2} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// BASKETBALL
+// ═════════════════════════════════════════════════════════════════════
+function Bball() {
+  const [bTab, setBTab]       = useState("today");
+  const [lib, setLib]         = useS("drillLib", { "Ball Handling": ["Figure 8s","Spider Dribble","Crossover Combo","Behind the Back","In & Out"], "Shooting": ["Spot Shooting","Free Throws","Catch & Shoot","Pull-up Jumper","3PT Corners","Mid-Range Fade"], "Footwork": ["Euro Step","Jab Step","Pivot Work","Drop Step","Dream Shake"], "Conditioning": ["Suicides","Def. Slides","Jump Rope","Box Jumps","Ladder Work"] });
+  const [plans, setPlans]     = useS("drillPlans", []);
+  const [drillLog, setDrillLog] = useS("drillLog", {});
+  const [games, setGames]     = useS("games", []);
+  const [evs, setEvs]         = useS("evs", {});
+  const [sd, setSd]           = useState(td()), [st, setSt] = useState("16:00");
+  const [editP, setEditP]     = useState(null);
+  const [newCat, setNewCat]   = useState("");
+  const [newPN, setNewPN]     = useState("");
+  const [addG, setAddG]       = useState(false);
+  const EG = { date: td(), opponent: "", myPts: "", oppPts: "", fg: "", fga: "", ft: "", fta: "", threes: "", threesA: "", reb: "", ast: "", stl: "", blk: "", to: "", notes: "" };
+  const [ng, setNg]           = useState(EG);
+
+  const today = td(), tD = drillLog[today] || {};
+  const togD = (c, d) => setDrillLog(p => ({ ...p, [today]: { ...(p[today] || {}), [c + "|" + d]: !(p[today] || {})[c + "|" + d] } }));
+  const total = Object.values(lib).reduce((a, v) => a + v.length, 0);
+  const done = Object.values(tD).filter(Boolean).length;
+  const avg = f => games.length ? (games.reduce((a, g) => a + num(g[f]), 0) / games.length).toFixed(1) : "-";
+  const saveG = () => { if (!ng.opponent.trim()) return; setGames(p => [{ ...ng, id: Date.now() }, ...p]); setAddG(false); setNg(EG); };
+  const sched = (label) => {
+    setEvs(p => ({ ...p, [sd]: [...(p[sd] || []), { id: Date.now(), title: "🏀 " + (label || "Basketball Practice"), color: PINK, time: st, dur: "90", rep: "none" }] }));
+    alert("Scheduled on " + sd + " @ " + st);
+  };
+
+  const TodayTab = () => (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+        <span style={{ color: MID, fontSize: 13 }}>Today's Practice</span>
+        <span style={{ fontFamily: "monospace", fontWeight: 700, color: LIME }}>{done}/{total}</span>
+      </div>
+      <div style={{ background: "rgba(255,68,68,.07)", border: "1px solid rgba(255,95,160,.2)", borderRadius: 10, padding: "10px 14px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 14 }}>
+        <span style={{ fontSize: 12, color: PINK, fontWeight: 600 }}>📅 Schedule:</span>
+        <In type="date" value={sd} onChange={e => setSd(e.target.value)} style={{ width: 140 }} />
+        <In type="time" value={st} onChange={e => setSt(e.target.value)} style={{ width: 110 }} />
+        <Btn onClick={() => sched("Basketball Practice")} v="pink" style={{ fontSize: 12, padding: "6px 14px" }}>→ Add to Planner</Btn>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {Object.entries(lib).map(([cat, drills]) => (
+          <div key={cat} style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 14 }}>
+            <div style={{ fontWeight: 700, marginBottom: 10, color: AMB, fontSize: 13, fontFamily: "monospace" }}>{cat}</div>
+            {drills.map((d, i) => {
+              const dn = !!(tD[cat + "|" + d]);
+              return (
+                <div key={i} onClick={() => togD(cat, d)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px", background: dn ? "rgba(255,122,0,.08)" : SURF, borderRadius: 7, cursor: "pointer", marginBottom: 4, border: "1px solid " + (dn ? "rgba(255,122,0,.25)" : BOR) }}>
+                  <Box done={dn} click={e => { e.stopPropagation(); togD(cat, d); }} />
+                  <span style={{ fontSize: 12, textDecoration: dn ? "line-through" : "none", color: dn ? LOW : TEXT }}>{d}</span>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const LibTab = () => (
+    <div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <In value={newCat} onChange={e => setNewCat(e.target.value)} placeholder="New category..." style={{ flex: 1 }} />
+        <Btn onClick={() => { if (newCat.trim()) { setLib(p => ({ ...p, [newCat]: [] })); setNewCat(""); } }}>+ Category</Btn>
+      </div>
+      {Object.entries(lib).map(([cat, drills]) => (
+        <div key={cat} style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontWeight: 700, color: AMB, fontSize: 13, fontFamily: "monospace" }}>{cat}</span>
+            <button onClick={() => { if (window.confirm("Remove '" + cat + "'?")) setLib(p => { const nx = { ...p }; delete nx[cat]; return nx; }); }} style={{ background: "none", border: "none", color: PINK, cursor: "pointer", fontSize: 12 }}>🗑 Remove</button>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+            {drills.map((d, i) => (
+              <div key={i} style={{ background: SURF, border: "1px solid " + BOR, borderRadius: 6, padding: "3px 8px", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}>
+                {d}<button onClick={() => setLib(p => ({ ...p, [cat]: p[cat].filter((_, j) => j !== i) }))} style={{ background: "none", border: "none", color: LOW, cursor: "pointer", fontSize: 11 }}>×</button>
+              </div>
+            ))}
+          </div>
+          <In placeholder="Add drill... press Enter" onKeyDown={e => { if (e.key === "Enter" && e.target.value.trim()) { setLib(p => ({ ...p, [cat]: [...(p[cat] || []), e.target.value.trim()] })); e.target.value = ""; } }} />
+        </div>
+      ))}
+    </div>
+  );
+
+  const PlansTab = () => {
+    const plan = plans.find(p => p.id === editP);
+    if (editP && plan) {
+      const tog2 = key => { const has = (plan.drills || []).includes(key); const up = { ...plan, drills: has ? plan.drills.filter(x => x !== key) : [...(plan.drills || []), key] }; setPlans(p => p.map(x => x.id === up.id ? up : x)); };
+      return (
+        <div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
+            <Btn onClick={() => setEditP(null)} v="ghost" style={{ padding: "5px 12px" }}>← Back</Btn>
+            <span style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>{plan.name}</span>
+            <Btn onClick={() => sched(plan.name)} v="pink" style={{ fontSize: 12 }}>📅 Schedule</Btn>
+          </div>
+          {Object.entries(lib).map(([cat, drills]) => (
+            <div key={cat} style={{ marginBottom: 14 }}>
+              <FL>{cat}</FL>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {drills.map((d, i) => { const key = cat + "|" + d, sel = (plan.drills || []).includes(key); return <Chip key={i} on={sel} col={PINK} click={() => tog2(key)}>{d}</Chip>; })}
+              </div>
+            </div>
+          ))}
+          <div style={{ background: "rgba(255,68,68,.07)", border: "1px solid rgba(255,95,160,.2)", borderRadius: 10, padding: "10px 14px", marginTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: PINK, fontWeight: 600 }}>📅 Schedule:</span>
+            <In type="date" value={sd} onChange={e => setSd(e.target.value)} style={{ width: 140 }} />
+            <In type="time" value={st} onChange={e => setSt(e.target.value)} style={{ width: 110 }} />
+            <Btn onClick={() => sched(plan.name)} v="pink" style={{ fontSize: 12 }}>→ Add to Planner</Btn>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <In value={newPN} onChange={e => setNewPN(e.target.value)} placeholder="New plan name..." style={{ flex: 1 }} />
+          <Btn onClick={() => { if (newPN.trim()) { const p = { id: Date.now(), name: newPN, drills: [] }; setPlans(prev => [...prev, p]); setNewPN(""); setEditP(p.id); } }}>+ Plan</Btn>
+        </div>
+        {plans.map(p => (
+          <div key={p.id} style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontWeight: 700 }}>{p.name}</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn onClick={() => setEditP(p.id)} v="ghost" style={{ fontSize: 12, padding: "5px 12px", color: PINK, borderColor: PINK + "44" }}>✏ Edit</Btn>
+                <Btn onClick={() => sched(p.name)} v="pink" style={{ fontSize: 12, padding: "5px 12px" }}>📅</Btn>
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: LOW, marginTop: 4 }}>{(p.drills || []).length} drills</div>
+          </div>
+        ))}
+        {!plans.length && <div style={{ color: LOW, textAlign: "center", padding: "24px 0", fontSize: 13 }}>Create a plan to customise your sessions</div>}
+      </div>
+    );
+  };
+
+  const GamesTab = () => (
+    <div>
+      <Btn onClick={() => setAddG(!addG)} style={{ marginBottom: 14 }}>{addG ? "✕ Cancel" : "+ Log Game"}</Btn>
+      {addG && (
+        <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }}>
+            {[["date","date",ng.date],["opponent","text",ng.opponent,"Opponent"],["myPts","number",ng.myPts,"My Pts"],["oppPts","number",ng.oppPts,"Opp Pts"],["fg","number",ng.fg,"FG"],["fga","number",ng.fga,"FGA"],["threes","number",ng.threes,"3PT"],["threesA","number",ng.threesA,"3PA"],["ft","number",ng.ft,"FT"],["fta","number",ng.fta,"FTA"],["reb","number",ng.reb,"Reb"],["ast","number",ng.ast,"Ast"],["stl","number",ng.stl,"Stl"],["blk","number",ng.blk,"Blk"],["to","number",ng.to,"TO"]].map(([f, t, val, ph]) => (
+              <In key={f} type={t} value={val} onChange={e => setNg(p => ({ ...p, [f]: e.target.value }))} placeholder={ph} />
+            ))}
+          </div>
+          <Ta value={ng.notes} onChange={e => setNg(p => ({ ...p, notes: e.target.value }))} placeholder="Notes..." rows={2} style={{ marginBottom: 10 }} />
+          <Btn onClick={saveG} v="pink">Save Game</Btn>
+        </div>
+      )}
+      {games.map(g => {
+        const w = num(g.myPts) > num(g.oppPts);
+        return (
+          <div key={g.id} style={{ background: CARD, border: "1px solid " + (w ? "rgba(255,122,0,.3)" : "rgba(255,68,68,.25)"), borderRadius: 11, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div><span style={{ fontWeight: 700 }}>vs {g.opponent}</span><span style={{ marginLeft: 8, fontSize: 11, color: LOW, fontFamily: "monospace" }}>{g.date}</span></div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <span style={{ fontWeight: 800, fontSize: 18, fontFamily: "monospace" }}>{g.myPts || 0}</span>
+                <span style={{ color: LOW }}>–</span>
+                <span style={{ fontWeight: 800, fontSize: 18, fontFamily: "monospace" }}>{g.oppPts || 0}</span>
+                <span style={{ background: w ? LIME : PINK, color: "#fff", borderRadius: 5, padding: "2px 8px", fontSize: 11, fontWeight: 800 }}>{w ? "W" : "L"}</span>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 11 }}>
+              {[["FG%", g.fga > 0 ? ((g.fg / g.fga) * 100).toFixed(0) + "%" : "-"],["3PT",g.threes+"/"+g.threesA],["FT",g.ft+"/"+g.fta],["REB",g.reb],["AST",g.ast],["STL",g.stl],["BLK",g.blk],["TO",g.to]].map(([l, val]) => (
+                <div key={l} style={{ textAlign: "center" }}><div style={{ color: LOW, fontSize: 9, fontFamily: "monospace" }}>{l}</div><div style={{ fontWeight: 700, fontFamily: "monospace" }}>{val || "-"}</div></div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const StatsTab = () => games.length > 0 ? (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(110px,1fr))", gap: 9, marginBottom: 16 }}>
+        {[["Points","myPts",LIME],["Rebounds","reb",CYN],["Assists","ast",AMB],["Steals","stl",PINK],["Blocks","blk",VIO],["TOs","to",LOW]].map(([l, f, c]) => <Stat key={f} label={l} value={avg(f)} col={c} />)}
+      </div>
+      <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 16 }}>
+        <div style={{ display: "flex", gap: 24 }}>
+          {[["W", games.filter(g => num(g.myPts) > num(g.oppPts)).length, LIME],["L", games.filter(g => num(g.myPts) <= num(g.oppPts)).length, PINK],["Win%", games.length ? ((games.filter(g => num(g.myPts) > num(g.oppPts)).length / games.length) * 100).toFixed(0) + "%" : "-", VIO]].map(([l, val, c]) => (
+            <div key={l} style={{ textAlign: "center" }}><div style={{ fontSize: 28, fontWeight: 700, color: c, fontFamily: "monospace" }}>{val}</div><div style={{ color: LOW, fontSize: 13 }}>{l}</div></div>
+          ))}
+        </div>
+      </div>
+    </div>
+  ) : <div style={{ color: LOW, textAlign: "center", padding: 48, fontSize: 14 }}>Log games to see your stats</div>;
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", padding: "16px 24px 24px" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexShrink: 0, alignItems: "center", flexWrap: "wrap" }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, marginRight: 6 }}>🏀 Basketball</h2>
+        {[["today","📋 Today"],["plans","🗂 Plans"],["lib","✏ Library"],["games","🏟 Games"],["stats","📊 Stats"]].map(([v, l]) => <Chip key={v} on={bTab === v} col={PINK} click={() => setBTab(v)}>{l}</Chip>)}
+      </div>
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {bTab === "today" && <TodayTab />}
+        {bTab === "plans" && <PlansTab />}
+        {bTab === "lib"   && <LibTab />}
+        {bTab === "games" && <GamesTab />}
+        {bTab === "stats" && <StatsTab />}
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// CALORIES
+// ═════════════════════════════════════════════════════════════════════
+function Cals() {
+  const [cal, setCal]   = useS("cal", {});
+  const [mfp, setMfp]   = useState(false);
+  const [mfpT, setMfpT] = useState(""), [mfpM, setMfpM] = useState(""), [parsing, setParsing] = useState(false);
+  const [fn, setFn] = useState(""), [fc, setFc] = useState(""), [fp, setFp] = useState(""), [fC, setFC] = useState(""), [ff, setFf] = useState(""), [fm, setFm] = useState("Breakfast");
+  const today = td(), day = cal[today] || { meals: [], steps: 0, burn: 0, goal: 2500 };
+  const upd = d => setCal(p => ({ ...p, [today]: d }));
+  const MEALS = ["Breakfast","Lunch","Dinner","Snacks"];
+  const addF = () => { if (!fn.trim() || !fc) return; upd({ ...day, meals: [...day.meals, { id: Date.now(), name: fn, cal: num(fc), protein: num(fp), carbs: num(fC), fat: num(ff), meal: fm }] }); setFn(""); setFc(""); setFp(""); setFC(""); setFf(""); };
+  const totalIn = day.meals.reduce((a, m) => a + num(m.cal), 0);
+  const totalOut = num(day.burn) + Math.round(num(day.steps) * 0.04) + 1800;
+  const net = totalIn - totalOut, pct = Math.min(100, Math.round(totalIn / (day.goal || 2500) * 100));
+  const mac = day.meals.reduce((a, m) => ({ p: a.p + num(m.protein), c: a.c + num(m.carbs), f: a.f + num(m.fat) }), { p: 0, c: 0, f: 0 });
+
+  const parseMFP = async () => {
+    if (!mfpT.trim()) return;
+    setParsing(true); setMfpM("Parsing…");
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 2000, messages: [{ role: "user", content: "Extract food items from this MyFitnessPal data. Return ONLY a valid JSON array, no markdown. Format: [{\"name\":\"string\",\"cal\":number,\"protein\":number,\"carbs\":number,\"fat\":number,\"meal\":\"Breakfast or Lunch or Dinner or Snacks\"}]. Missing macros=0.\n\n" + mfpT }] }) });
+      const data = await res.json();
+      const raw = ((data.content && data.content[0] && data.content[0].text) || "[]").replace(/```json|```/g, "").trim();
+      const foods = JSON.parse(raw);
+      if (!Array.isArray(foods) || !foods.length) { setMfpM("⚠ No items found"); setParsing(false); return; }
+      upd({ ...day, meals: [...day.meals, ...foods.map(f => ({ ...f, id: Date.now() + Math.random(), cal: num(f.cal) }))] });
+      setMfpM("✓ Imported " + foods.length + " items"); setMfpT("");
+      setTimeout(() => { setMfpM(""); setMfp(false); }, 2000);
+    } catch (_) { setMfpM("✗ Error — try again"); }
+    setParsing(false);
+  };
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", padding: "16px 24px 24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexShrink: 0, flexWrap: "wrap", gap: 8 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700 }}>Calories</h2>
+        <Btn onClick={() => setMfp(!mfp)} v={mfp ? "sec" : "cyn"} style={{ fontSize: 12 }}>📲 {mfp ? "Close" : "Import MyFitnessPal"}</Btn>
+      </div>
+      {mfp && (
+        <div style={{ background: "#130900", border: "1px solid #3a2000", borderRadius: 12, padding: 16, marginBottom: 14, flexShrink: 0 }}>
+          <div style={{ fontSize: 11, color: "#a07040", marginBottom: 8, lineHeight: 1.8 }}><b style={{ color: CYN }}>How to export: </b>MFP → Diary → ⋯ Share Diary to copy your full day.<br /><span style={{ opacity: 0.6 }}>💡 Also works with copy-pasted entries or nutrition labels</span></div>
+          <Ta value={mfpT} onChange={e => setMfpT(e.target.value)} rows={4} placeholder="Paste MFP data here..." style={{ background: "rgba(0,0,0,.3)", border: "1px solid #3a2000", marginBottom: 10 }} />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <Btn onClick={parseMFP} disabled={parsing || !mfpT.trim()} v="cyn">{parsing ? "⏳ Parsing…" : "✨ Parse & Import"}</Btn>
+            <Btn onClick={() => setMfpT("")} v="sec">Clear</Btn>
+            {mfpM && <span style={{ fontSize: 12, fontWeight: 700, color: mfpM[0] === "✓" ? LIME : mfpM[0] === "⚠" ? AMB : PINK, fontFamily: "monospace" }}>{mfpM}</span>}
+          </div>
+        </div>
+      )}
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 9 }}>
+          <Stat label="In" value={fmt(totalIn)} col={LIME} sub="kcal" />
+          <Stat label="Burned" value={fmt(totalOut)} col={PINK} sub="kcal" />
+          <Stat label="Net" value={(net > 0 ? "+" : "") + fmt(net)} col={net <= 0 ? LIME : AMB} sub="kcal" />
+          <Stat label="Steps" value={fmt(num(day.steps))} col={CYN} sub="today" />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 11, padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontWeight: 600, fontSize: 12 }}>Daily Goal</span>
+              <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                <In type="number" value={day.goal || 2500} onChange={e => upd({ ...day, goal: num(e.target.value) })} style={{ width: 76, fontSize: 12, padding: "4px 8px" }} />
+                <span style={{ color: LOW, fontSize: 11 }}>kcal</span>
+              </div>
+            </div>
+            <PBar pct={pct} col={pct > 100 ? PINK : LIME} h={6} />
+            <div style={{ fontSize: 10, color: LOW, marginTop: 4, fontFamily: "monospace" }}>{totalIn}/{day.goal || 2500} ({pct}%)</div>
+          </div>
+          <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 11, padding: 14 }}>
+            <FL>Macros</FL>
+            <div style={{ display: "flex", justifyContent: "space-around" }}>
+              {[["P", mac.p, VIO],["C", mac.c, AMB],["F", mac.f, PINK]].map(([l, val, c]) => (
+                <div key={l} style={{ textAlign: "center" }}><div style={{ fontSize: 18, fontWeight: 700, color: c, fontFamily: "monospace" }}>{val}g</div><div style={{ color: LOW, fontSize: 10 }}>{l === "P" ? "Protein" : l === "C" ? "Carbs" : "Fat"}</div></div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ flex: 1, background: CARD, border: "1px solid " + BOR, borderRadius: 10, padding: 12 }}><FL>Steps</FL><In type="number" value={day.steps || ""} onChange={e => upd({ ...day, steps: num(e.target.value) })} placeholder="0" style={{ fontSize: 15, fontWeight: 700, fontFamily: "monospace", padding: "4px 8px" }} /></div>
+          <div style={{ flex: 1, background: CARD, border: "1px solid " + BOR, borderRadius: 10, padding: 12 }}><FL>Workout Burn (kcal)</FL><In type="number" value={day.burn || ""} onChange={e => upd({ ...day, burn: num(e.target.value) })} placeholder="0" style={{ fontSize: 15, fontWeight: 700, fontFamily: "monospace", padding: "4px 8px" }} /></div>
+        </div>
+        <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 11, padding: 14 }}>
+          <FL>Log Food Manually</FL>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+            {MEALS.map(m => <Chip key={m} on={fm === m} click={() => setFm(m)}>{m}</Chip>)}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr", gap: 6, marginBottom: 8 }}>
+            <In value={fn} onChange={e => setFn(e.target.value)} placeholder="Food name" />
+            <In value={fc} onChange={e => setFc(e.target.value)} placeholder="kcal" type="number" />
+            <In value={fp} onChange={e => setFp(e.target.value)} placeholder="P(g)" type="number" />
+            <In value={fC} onChange={e => setFC(e.target.value)} placeholder="C(g)" type="number" />
+            <In value={ff} onChange={e => setFf(e.target.value)} placeholder="F(g)" type="number" />
+          </div>
+          <Btn onClick={addF}>+ Log</Btn>
+        </div>
+        {MEALS.map(meal => {
+          const mf = day.meals.filter(m => m.meal === meal); if (!mf.length) return null;
+          return (
+            <div key={meal}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span style={{ fontWeight: 700, fontSize: 13 }}>{meal}</span>
+                <span style={{ color: AMB, fontWeight: 700, fontSize: 12, fontFamily: "monospace" }}>{fmt(mf.reduce((a, f) => a + num(f.cal), 0))} kcal</span>
+              </div>
+              {mf.map(f => (
+                <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: CARD, border: "1px solid " + BOR, borderRadius: 8, marginBottom: 4, fontSize: 13 }}>
+                  <span style={{ flex: 1 }}>{f.name}</span>
+                  <span style={{ color: AMB, fontWeight: 600, fontFamily: "monospace", fontSize: 12 }}>{f.cal}</span>
+                  <span style={{ color: LOW, fontSize: 10, fontFamily: "monospace" }}>P:{f.protein} C:{f.carbs} F:{f.fat}</span>
+                  <button onClick={() => upd({ ...day, meals: day.meals.filter(m => m.id !== f.id) })} style={{ background: "none", border: "none", color: LOW, cursor: "pointer", fontSize: 14 }}>×</button>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// RECOVERY
+// ═════════════════════════════════════════════════════════════════════
+function Recovery() {
+  const [logs, setLogs] = useS("sleep", {});
+  const [activeDate, setActiveDate] = useState(td());
+  const e = logs[activeDate] || { h: "", q: 0, rpe: "", ready: 0, sore: {}, hydro: "", notes: "" };
+  const upd = u => setLogs(p => ({ ...p, [activeDate]: u }));
+  const MUSCLES = ["Quads","Hamstrings","Calves","Glutes","Low Back","Upper Back","Chest","Shoulders","Biceps","Triceps","Core","Neck"];
+  const QL = ["","Terrible","Poor","OK","Good","Great"];
+  const RL = ["","Dead","Low","Moderate","High","Peak"];
+  const QC = ["",PINK,PINK,AMB,LIME,"#60ff90"];
+  const RC = ["",PINK,PINK,AMB,LIME,"#60ff90"];
+  const setSore = (m, v) => upd({ ...e, sore: { ...e.sore, [m]: v } });
+  const last14 = Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (13 - i)); const k = fmtDate(d), en = logs[k] || {}; return { d: d.getDate(), h: num(en.h), q: en.q || 0 }; });
+  const avgH = (() => { const v = last14.map(x => x.h).filter(h => h > 0); return v.length ? (v.reduce((a, b) => a + b, 0) / v.length).toFixed(1) : "—"; })();
+
+  return (
+    <div style={{ height: "100%", overflowY: "auto", padding: "16px 24px 32px" }}>
+      <SH right={<In type="date" value={activeDate} onChange={ev => setActiveDate(ev.target.value)} style={{ width: 150 }} />}>🛌 Recovery</SH>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
+        <Stat label="Avg Sleep (14d)" value={avgH !== "—" ? avgH + "h" : "—"} col={TEAL} />
+        <Stat label="Last Night" value={e.h ? e.h + "h" : "—"} col={TEAL} sub={e.q ? QL[e.q] : ""} />
+        <Stat label="Readiness" value={e.ready ? RL[e.ready] : "—"} col={RC[e.ready] || LOW} />
+      </div>
+
+      <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 18, marginBottom: 16 }}>
+        <FL>Sleep</FL>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div><FL>Hours Slept</FL><In type="number" value={e.h} onChange={ev => upd({ ...e, h: ev.target.value })} placeholder="7.5" step="0.5" /></div>
+          <div>
+            <FL>Sleep Quality</FL>
+            <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
+              {[1,2,3,4,5].map(q => <button key={q} onClick={() => upd({ ...e, q })} style={{ flex: 1, padding: "7px 0", borderRadius: 6, border: "1px solid " + (e.q === q ? QC[q] : BOR), background: e.q === q ? QC[q] + "22" : SURF, color: e.q === q ? QC[q] : LOW, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{q}</button>)}
+            </div>
+            {e.q > 0 && <div style={{ fontSize: 11, color: QC[e.q], marginTop: 4, fontFamily: "monospace" }}>{QL[e.q]}</div>}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 18, marginBottom: 16 }}>
+        <FL>Training Load & Readiness</FL>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <FL>Yesterday's RPE (1–10)</FL>
+            <In type="number" value={e.rpe} onChange={ev => upd({ ...e, rpe: ev.target.value })} placeholder="6" min="1" max="10" />
+            <div style={{ fontSize: 11, color: LOW, marginTop: 4 }}>How hard did yesterday feel?</div>
+          </div>
+          <div>
+            <FL>Today's Readiness</FL>
+            <div style={{ display: "flex", gap: 5, marginTop: 4 }}>
+              {[1,2,3,4,5].map(r => <button key={r} onClick={() => upd({ ...e, ready: r })} style={{ flex: 1, padding: "7px 0", borderRadius: 6, border: "1px solid " + (e.ready === r ? RC[r] : BOR), background: e.ready === r ? RC[r] + "22" : SURF, color: e.ready === r ? RC[r] : LOW, fontWeight: 700, fontSize: 12, cursor: "pointer" }}>{r}</button>)}
+            </div>
+            {e.ready > 0 && <div style={{ fontSize: 11, color: RC[e.ready], marginTop: 4, fontFamily: "monospace" }}>{RL[e.ready]}</div>}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 18, marginBottom: 16 }}>
+        <FL>Soreness Map (0 = none · 5 = severe)</FL>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+          {MUSCLES.map(m => {
+            const v = e.sore[m] || 0, sc = v === 0 ? LOW : v <= 2 ? LIME : v <= 3 ? AMB : PINK;
+            return (
+              <div key={m} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <div style={{ width: 7, height: 7, borderRadius: "50%", background: sc, flexShrink: 0 }} />
+                <span style={{ fontSize: 10, color: MID, flex: 1 }}>{m}</span>
+                <div style={{ display: "flex", gap: 2 }}>
+                  {[0,1,2,3,4,5].map(val => <div key={val} onClick={() => setSore(m, val)} style={{ width: 15, height: 15, borderRadius: 3, cursor: "pointer", background: v === val ? sc : SURF, border: "1px solid " + (v === val ? sc : BOR), fontSize: 8, display: "flex", alignItems: "center", justifyContent: "center", color: v === val ? "#000" : LOW }}>{val}</div>)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 18, marginBottom: 16 }}>
+        <FL>Hydration & Notes</FL>
+        <div style={{ marginBottom: 10 }}><FL>Water intake (oz)</FL><In type="number" value={e.hydro} onChange={ev => upd({ ...e, hydro: ev.target.value })} placeholder="64" /></div>
+        <Ta value={e.notes || ""} onChange={ev => upd({ ...e, notes: ev.target.value })} placeholder="Recovery notes — ice bath, stretching, massage..." rows={3} />
+      </div>
+
+      <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 18 }}>
+        <FL>14-Day Sleep Trend</FL>
+        <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 56, marginBottom: 6 }}>
+          {last14.map((x, i) => <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, height: "100%", justifyContent: "flex-end" }}><div style={{ width: "100%", height: x.h > 0 ? (x.h / 10 * 100) + "%" : "2px", minHeight: 2, background: x.h >= 7 ? TEAL : x.h >= 6 ? AMB : x.h > 0 ? PINK : BOR, borderRadius: 2, opacity: x.h > 0 ? 0.85 : 0.3 }} /><div style={{ fontSize: 7, color: LOW, fontFamily: "monospace" }}>{x.d}</div></div>)}
+        </div>
+        <div style={{ display: "flex", gap: 12, fontSize: 10, color: LOW }}>
+          <span style={{ color: TEAL }}>■ 7h+</span><span style={{ color: AMB }}>■ 6-7h</span><span style={{ color: PINK }}>■ under 6h</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// BODY METRICS
+// ═════════════════════════════════════════════════════════════════════
+function Metrics() {
+  const [data, setData] = useS("metrics", []);
+  const [w, setW] = useState(""), [bf, setBf] = useState(""), [ch, setCh] = useState(""), [wa, setWa] = useState(""), [hi, setHi] = useState(""), [ne, setNe] = useState(""), [ar, setAr] = useState(""), [th, setTh] = useState(""), [mDate, setMDate] = useState(td()), [mNotes, setMNotes] = useState("");
+  const add = () => {
+    if (!w && !bf) return;
+    setData(p => [...p, { id: Date.now(), date: mDate, weight: num(w), fat: num(bf), chest: num(ch), waist: num(wa), hips: num(hi), neck: num(ne), arms: num(ar), thighs: num(th), notes: mNotes }].sort((a, b) => a.date.localeCompare(b.date)));
+    setW(""); setBf(""); setCh(""); setWa(""); setHi(""); setNe(""); setAr(""); setTh(""); setMNotes("");
+  };
+  const latest = data.length ? data[data.length - 1] : null;
+  const prev   = data.length > 1 ? data[data.length - 2] : null;
+  const delta = f => { if (!latest || !prev || !latest[f] || !prev[f]) return null; const d = (latest[f] - prev[f]).toFixed(1); return (d > 0 ? "+" : "") + d; };
+  const last8 = data.slice(-8);
+  const MiniBar = ({ items, col }) => {
+    const vals = items.filter(v => v > 0); if (!vals.length) return <div style={{ color: LOW, fontSize: 11, padding: "8px 0" }}>No data yet</div>;
+    const mn = Math.min(...vals), mx = Math.max(...vals), rng = mx - mn || 1;
+    return <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 40 }}>{items.map((v, i) => <div key={i} style={{ flex: 1, height: v > 0 ? ((v - mn) / rng * 80 + 20) + "%" : "2px", minHeight: 2, background: v > 0 ? col : BOR, borderRadius: 2, opacity: 0.75 }} />)}</div>;
+  };
+
+  return (
+    <div style={{ height: "100%", overflowY: "auto", padding: "16px 24px 32px" }}>
+      <SH>📈 Body Metrics</SH>
+      {latest && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))", gap: 10, marginBottom: 20 }}>
+          {[["Weight", latest.weight ? latest.weight + " lbs" : "—", delta("weight"), LIME],["Body Fat", latest.fat ? latest.fat + "%" : "—", delta("fat"), CYN],["Waist", latest.waist ? latest.waist + '"' : "—", delta("waist"), AMB],["Arms", latest.arms ? latest.arms + '"' : "—", delta("arms"), PINK]].map(([l, val, d2, c]) => (
+            <div key={l} style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 10, padding: "12px 14px", textAlign: "center" }}>
+              <div style={{ fontSize: 19, fontWeight: 700, color: c, fontFamily: "monospace" }}>{val}</div>
+              <div style={{ fontSize: 11, color: LOW }}>{l}</div>
+              {d2 && <div style={{ fontSize: 10, color: num(d2) < 0 ? LIME : PINK, fontFamily: "monospace", marginTop: 2 }}>{d2}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+      {data.length > 1 && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
+          <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 14 }}><FL>Weight Trend</FL><MiniBar items={last8.map(m => m.weight)} col={LIME} /></div>
+          <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 14 }}><FL>Body Fat % Trend</FL><MiniBar items={last8.map(m => m.fat)} col={CYN} /></div>
+        </div>
+      )}
+      <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 18, marginBottom: 20 }}>
+        <FL>Log New Entry</FL>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div><FL>Date</FL><In type="date" value={mDate} onChange={e => setMDate(e.target.value)} /></div>
+          <div><FL>Weight (lbs)</FL><In type="number" value={w} onChange={e => setW(e.target.value)} placeholder="185" step="0.1" /></div>
+          <div><FL>Body Fat %</FL><In type="number" value={bf} onChange={e => setBf(e.target.value)} placeholder="12.5" step="0.1" /></div>
+        </div>
+        <FL>Measurements (inches)</FL>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
+          {[["Chest",ch,setCh],["Waist",wa,setWa],["Hips",hi,setHi],["Neck",ne,setNe],["Arms",ar,setAr],["Thighs",th,setTh]].map(([l,val,set]) => <div key={l}><FL>{l}</FL><In type="number" value={val} onChange={e => set(e.target.value)} placeholder="0" step="0.25" /></div>)}
+        </div>
+        <Ta value={mNotes} onChange={e => setMNotes(e.target.value)} placeholder="Notes (morning fasted, post-competition...)" rows={2} style={{ marginBottom: 10 }} />
+        <Btn onClick={add}>+ Log</Btn>
+      </div>
+      <FL>History ({data.length} entries)</FL>
+      {[...data].reverse().slice(0, 20).map(m => (
+        <div key={m.id} style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 10, padding: "11px 14px", marginBottom: 8, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: "monospace", fontSize: 12, color: MID, flexShrink: 0 }}>{m.date}</span>
+          {m.weight > 0 && <span style={{ color: LIME, fontFamily: "monospace", fontWeight: 700 }}>{m.weight} lbs</span>}
+          {m.fat > 0 && <span style={{ color: CYN, fontFamily: "monospace" }}>{m.fat}% BF</span>}
+          {m.waist > 0 && <span style={{ color: MID, fontSize: 12 }}>waist: {m.waist}"</span>}
+          {m.arms > 0 && <span style={{ color: MID, fontSize: 12 }}>arms: {m.arms}"</span>}
+          {m.notes && <span style={{ color: LOW, fontSize: 12, flex: 1 }}>{m.notes}</span>}
+          <button onClick={() => setData(p => p.filter(x => x.id !== m.id))} style={{ background: "none", border: "none", color: LOW, cursor: "pointer", marginLeft: "auto" }}>×</button>
+        </div>
+      ))}
+      {!data.length && <div style={{ color: LOW, textAlign: "center", padding: "32px 0", fontSize: 14 }}>Log your first entry to start tracking 📊</div>}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// PRs
+// ═════════════════════════════════════════════════════════════════════
+function PRsPage() {
+  const [prs, setPrs] = useS("prs", []);
+  const [gym]         = useS("gym", {});
+  const [ex, setEx] = useState(""), [wt, setWt] = useState(""), [rp, setRp] = useState("1"), [prD, setPrD] = useState(td()), [prN, setPrN] = useState("");
+
+  const add = () => {
+    if (!ex.trim() || !wt) return;
+    setPrs(p => [...p, { id: Date.now(), exercise: ex, weight: num(wt), reps: num(rp) || 1, date: prD, notes: prN, e1rm: Math.round(num(wt) * (1 + num(rp) / 30)) }]);
+    setEx(""); setWt(""); setRp("1"); setPrN("");
+  };
+
+  const gymBest = (() => {
+    const b = {};
+    Object.entries(gym).forEach(([date, log]) => {
+      (log.exercises || []).forEach(ex2 => {
+        const maxW = ex2.sets.reduce((best, s) => { const sw = num(s.w); return sw > best ? sw : best; }, 0);
+        if (maxW > 0 && (!b[ex2.name] || maxW > b[ex2.name].w)) b[ex2.name] = { w: maxW, date };
+      });
+    });
+    return b;
+  })();
+
+  const byEx = prs.reduce((acc, pr) => { if (!acc[pr.exercise] || pr.weight > acc[pr.exercise].weight) acc[pr.exercise] = pr; return acc; }, {});
+
+  return (
+    <div style={{ height: "100%", overflowY: "auto", padding: "16px 24px 32px" }}>
+      <SH>🏆 Personal Records</SH>
+      {Object.keys(byEx).length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <FL>Current PRs</FL>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(155px,1fr))", gap: 10, marginBottom: 12 }}>
+            {Object.values(byEx).sort((a, b) => b.weight - a.weight).map((pr, i) => (
+              <div key={pr.exercise} style={{ background: CARD, border: "1px solid " + (i === 0 ? "#ffd70044" : BOR), borderRadius: 10, padding: "13px 14px", textAlign: "center", position: "relative" }}>
+                {i < 3 && <div style={{ position: "absolute", top: 8, right: 10, fontSize: 14 }}>{["🥇","🥈","🥉"][i]}</div>}
+                <div style={{ fontSize: 20, fontWeight: 700, color: LIME, fontFamily: "monospace" }}>{pr.weight}<span style={{ fontSize: 12 }}>lbs</span></div>
+                {pr.reps > 1 && <div style={{ fontSize: 11, color: AMB, fontFamily: "monospace" }}>×{pr.reps} reps</div>}
+                {pr.reps > 1 && <div style={{ fontSize: 10, color: LOW }}>e1RM: {pr.e1rm} lbs</div>}
+                <div style={{ fontSize: 12, fontWeight: 600, color: TEXT, marginTop: 4 }}>{pr.exercise}</div>
+                <div style={{ fontSize: 10, color: LOW, fontFamily: "monospace" }}>{pr.date}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {Object.keys(gymBest).length > 0 && (
+        <div style={{ background: "rgba(255,122,0,.08)", border: "1px solid rgba(180,255,87,.2)", borderRadius: 12, padding: 16, marginBottom: 20 }}>
+          <FL>Detected from Gym Logs</FL>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {Object.entries(gymBest).map(([name, d2]) => (
+              <div key={name} style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 8, padding: "6px 12px", fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
+                <span>{name}</span>
+                <span style={{ color: LIME, fontFamily: "monospace", fontWeight: 700 }}>{d2.w} lbs</span>
+                <button onClick={() => { setEx(name); setWt(String(d2.w)); setPrD(d2.date); }} style={{ background: LIME + "22", border: "1px solid " + LIME + "44", borderRadius: 4, padding: "2px 7px", color: LIME, fontSize: 11, cursor: "pointer", fontWeight: 700 }}>+ Save</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 18, marginBottom: 20 }}>
+        <FL>Log a PR</FL>
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div><FL>Exercise</FL><In value={ex} onChange={e => setEx(e.target.value)} placeholder="e.g. Bench Press" /></div>
+          <div><FL>Weight (lbs)</FL><In type="number" value={wt} onChange={e => setWt(e.target.value)} placeholder="225" /></div>
+          <div><FL>Reps</FL><In type="number" value={rp} onChange={e => setRp(e.target.value)} placeholder="1" /></div>
+          <div><FL>Date</FL><In type="date" value={prD} onChange={e => setPrD(e.target.value)} /></div>
+        </div>
+        {num(wt) > 0 && num(rp) > 1 && <div style={{ fontSize: 12, color: AMB, marginBottom: 10, fontFamily: "monospace" }}>Estimated 1RM: {Math.round(num(wt) * (1 + num(rp) / 30))} lbs</div>}
+        <Ta value={prN} onChange={e => setPrN(e.target.value)} placeholder="Context (competition, training day, how it felt...)" rows={2} style={{ marginBottom: 10 }} />
+        <Btn onClick={add}>🏆 Save PR</Btn>
+      </div>
+
+      <FL>All PRs ({prs.length})</FL>
+      {[...prs].reverse().map(pr => (
+        <div key={pr.id} style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 9, padding: "10px 14px", marginBottom: 7, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: LIME, fontFamily: "monospace", flexShrink: 0 }}>{pr.weight} lbs</div>
+          {pr.reps > 1 && <div style={{ fontSize: 12, color: AMB, fontFamily: "monospace" }}>×{pr.reps}</div>}
+          <div style={{ flex: 1, fontWeight: 600 }}>{pr.exercise}</div>
+          <div style={{ fontSize: 11, color: LOW, fontFamily: "monospace" }}>{pr.date}</div>
+          {pr.notes && <div style={{ fontSize: 11, color: LOW, width: "100%" }}>{pr.notes}</div>}
+          <button onClick={() => setPrs(p => p.filter(x => x.id !== pr.id))} style={{ background: "none", border: "none", color: LOW, cursor: "pointer", fontSize: 14 }}>×</button>
+        </div>
+      ))}
+      {!prs.length && <div style={{ color: LOW, textAlign: "center", padding: "32px 0", fontSize: 14 }}>No PRs yet — hit one in the gym and record it! 💪</div>}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// FILM ROOM
+// ═════════════════════════════════════════════════════════════════════
+function Film() {
+  const [notes, setNotes] = useS("film", []);
+  const [fTab, setFTab] = useState("list");
+  const [title, setTitle] = useState(""), [body, setBody] = useState(""), [cat, setCat] = useState("Coaching Feedback"), [nDate, setNDate] = useState(td()), [tags, setTags] = useState(""), [pri, setPri] = useState("normal"), [editId, setEditId] = useState(null), [search, setSearch] = useState("");
+  const CATS = ["Coaching Feedback","Film Notes","Offensive Plays","Defensive Schemes","Opponent Tendencies","Individual Skills","Team Concepts","Pre-Game Prep","Post-Game Review"];
+  const PC = { urgent: PINK, normal: LIME, reference: VIO };
+
+  const save = () => {
+    if (!title.trim()) return;
+    const entry = { id: editId || Date.now(), title, body, cat, date: nDate, tags: tags.split(",").map(t => t.trim()).filter(Boolean), pri };
+    if (editId) setNotes(p => p.map(n => n.id === editId ? entry : n)); else setNotes(p => [entry, ...p]);
+    setTitle(""); setBody(""); setTags(""); setCat("Coaching Feedback"); setPri("normal"); setEditId(null); setFTab("list");
+  };
+
+  const startEdit = n => { setEditId(n.id); setTitle(n.title); setBody(n.body); setCat(n.cat); setNDate(n.date); setTags((n.tags || []).join(", ")); setPri(n.pri || "normal"); setFTab("add"); };
+  const filtered = notes.filter(n => !search || n.title.toLowerCase().includes(search.toLowerCase()) || (n.body || "").toLowerCase().includes(search.toLowerCase()) || (n.tags || []).some(t => t.toLowerCase().includes(search.toLowerCase())));
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", padding: "16px 24px 24px" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexShrink: 0, alignItems: "center", flexWrap: "wrap" }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, marginRight: 6 }}>🎬 Film Room</h2>
+        <Chip on={fTab === "list"} col={VIO} click={() => { setFTab("list"); setEditId(null); }}>📋 Notes</Chip>
+        <Chip on={fTab === "add"} col={VIO} click={() => setFTab("add")}>{editId ? "✏ Edit" : "✚ Add"}</Chip>
+        {fTab === "list" && notes.length > 0 && <In value={search} onChange={e => setSearch(e.target.value)} placeholder="Search..." style={{ width: 180, marginLeft: "auto" }} />}
+      </div>
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {fTab === "add" && (
+          <div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div style={{ gridColumn: "1/-1" }}><FL>Title</FL><In value={title} onChange={e => setTitle(e.target.value)} placeholder="Note title..." /></div>
+              <div><FL>Category</FL><Sel value={cat} onChange={e => setCat(e.target.value)} style={{ width: "100%" }}>{CATS.map(c => <option key={c}>{c}</option>)}</Sel></div>
+              <div>
+                <FL>Priority</FL>
+                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                  {[["urgent","🔴"],["normal","🟡"],["reference","🔵"]].map(([v, l]) => <Chip key={v} on={pri === v} col={PC[v]} click={() => setPri(v)}>{l} {v.charAt(0).toUpperCase() + v.slice(1)}</Chip>)}
+                </div>
+              </div>
+              <div><FL>Date</FL><In type="date" value={nDate} onChange={e => setNDate(e.target.value)} /></div>
+              <div><FL>Tags (comma separated)</FL><In value={tags} onChange={e => setTags(e.target.value)} placeholder="pick-and-roll, defense..." /></div>
+            </div>
+            <FL>Notes</FL>
+            <Ta value={body} onChange={e => setBody(e.target.value)} placeholder={"Write your coaching feedback, play breakdowns, tendencies...\n\nTip: Be specific — what does the play look like? What's the cue? What needs work?"} rows={10} style={{ marginBottom: 12 }} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn onClick={save} v="vio">{editId ? "Update" : "Save Note"}</Btn>
+              <Btn onClick={() => { setEditId(null); setTitle(""); setBody(""); setTags(""); setFTab("list"); }} v="sec">Cancel</Btn>
+            </div>
+          </div>
+        )}
+        {fTab === "list" && (
+          <div>
+            {!filtered.length && <div style={{ color: LOW, textAlign: "center", padding: "48px 0", fontSize: 14 }}>{search ? "No notes match" : "No notes yet — add coaching feedback and film breakdowns"}</div>}
+            {filtered.map(note => (
+              <div key={note.id} style={{ background: CARD, border: "1px solid " + (note.pri === "urgent" ? PINK + "44" : note.pri === "reference" ? VIO + "44" : BOR), borderRadius: 12, padding: 16, marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>{note.title}</div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11, color: VIO, background: VIO + "18", borderRadius: 4, padding: "2px 7px" }}>{note.cat}</span>
+                      <span style={{ fontSize: 10, color: LOW, fontFamily: "monospace" }}>{note.date}</span>
+                      {note.pri !== "normal" && <span style={{ fontSize: 11, color: PC[note.pri], fontFamily: "monospace" }}>{note.pri === "urgent" ? "🔴 URGENT" : "🔵 REF"}</span>}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => startEdit(note)} style={{ background: "none", border: "none", color: LOW, cursor: "pointer", fontSize: 13 }}>✏</button>
+                    <button onClick={() => setNotes(p => p.filter(x => x.id !== note.id))} style={{ background: "none", border: "none", color: LOW, cursor: "pointer", fontSize: 14 }}>×</button>
+                  </div>
+                </div>
+                {note.body && <p style={{ color: MID, fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", marginBottom: (note.tags || []).length ? 8 : 0 }}>{note.body.slice(0, 280)}{note.body.length > 280 ? "…" : ""}</p>}
+                {(note.tags || []).length > 0 && <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>{note.tags.map(t => <span key={t} style={{ fontSize: 10, color: CYN, background: CYN + "14", borderRadius: 4, padding: "2px 7px" }}>#{t}</span>)}</div>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// REFLECTIONS
+// ═════════════════════════════════════════════════════════════════════
+function Reflect() {
+  const [jnl, setJnl] = useS("jnl", {});
+  const [date, setDate] = useState(td()), [view, setView] = useState("write"), [sum, setSum] = useState(""), [loading, setLoading] = useState(false);
+  const e = jnl[date] || { mood: 3, hi: "", ch: "", gr: "", tm: "" };
+  const upd = u => setJnl(p => ({ ...p, [date]: u }));
+  const MOODS = ["😔","😕","😐","🙂","😄"];
+  const MC = [PINK,AMB,VIO,LIME,CYN];
+  const wDates = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - d.getDay() + i); return fmtDate(d); });
+
+  const gen = async () => {
+    setLoading(true);
+    const text = wDates.map(dd => { const en = jnl[dd]; if (!en) return null; return dd + ": Mood " + en.mood + "/5. Highlights: " + (en.hi || "none") + ". Challenges: " + (en.ch || "none") + ". Grateful: " + (en.gr || "none") + ". Tomorrow: " + (en.tm || "none") + "."; }).filter(Boolean).join("\n");
+    if (!text) { setSum("No entries this week."); setLoading(false); return; }
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: "Weekly journal:\n\n" + text + "\n\nWrite a warm, insightful weekly summary (3–4 paragraphs): key themes, wins and challenges, emotional journey, and 2–3 actionable intentions for next week." }] }) });
+      const d = await r.json(); setSum((d.content && d.content[0] && d.content[0].text) || "Error.");
+    } catch (_) { setSum("Error. Please try again."); }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", padding: "16px 24px 24px" }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexShrink: 0, alignItems: "center", flexWrap: "wrap" }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, marginRight: 6 }}>Reflections</h2>
+        {[["write","✍ Write"],["history","📜 History"],["summary","✦ AI"]].map(([v, l]) => <Chip key={v} on={view === v} col={VIO} click={() => setView(v)}>{l}</Chip>)}
+      </div>
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {view === "write" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <In type="date" value={date} onChange={ev => setDate(ev.target.value)} style={{ width: 150 }} />
+              <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                <span style={{ color: LOW, fontSize: 10, fontFamily: "monospace" }}>MOOD</span>
+                {MOODS.map((m, i) => <span key={i} onClick={() => upd({ ...e, mood: i + 1 })} style={{ fontSize: 22, cursor: "pointer", opacity: e.mood === i + 1 ? 1 : 0.25 }}>{m}</span>)}
+              </div>
+            </div>
+            {e.mood > 0 && <div style={{ background: MC[e.mood-1] + "18", border: "1px solid " + MC[e.mood-1] + "44", borderRadius: 8, padding: "6px 12px", marginBottom: 14, fontSize: 12, color: MC[e.mood-1] }}>{MOODS[e.mood-1]} {["Rough day","Off day","Neutral","Good day","Great day!"][e.mood-1]}</div>}
+            {[["hi","✨ Highlights","What went well today?"],["ch","⚡ Challenges","What was difficult?"],["gr","🙏 Gratitude","What are you grateful for?"],["tm","🎯 Tomorrow","Focus for tomorrow?"]].map(([k, l, p]) => (
+              <div key={k} style={{ marginBottom: 14 }}>
+                <div style={{ fontWeight: 600, marginBottom: 5, fontSize: 13 }}>{l}</div>
+                <Ta value={e[k] || ""} onChange={ev => upd({ ...e, [k]: ev.target.value })} placeholder={p} rows={3} />
+              </div>
+            ))}
+          </div>
+        )}
+        {view === "history" && wDates.map(dd => {
+          const en = jnl[dd];
+          return (
+            <div key={dd} onClick={() => { setDate(dd); setView("write"); }} style={{ padding: "12px 14px", background: CARD, border: "1px solid " + BOR, borderRadius: 10, marginBottom: 8, cursor: "pointer" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div><span style={{ fontWeight: 600, fontSize: 13 }}>{dd}</span><span style={{ color: LOW, fontSize: 11, marginLeft: 8 }}>— {DAYS_FULL[new Date(dd + "T12:00:00").getDay()]}</span></div>
+                <span style={{ fontSize: 20 }}>{en ? MOODS[(en.mood || 3) - 1] : "—"}</span>
+              </div>
+              {en && en.hi && <p style={{ color: MID, fontSize: 12, marginTop: 4 }}>✨ {en.hi.slice(0, 80)}{en.hi.length > 80 ? "…" : ""}</p>}
+              {!en && <p style={{ color: LOW, fontSize: 12, marginTop: 4 }}>No entry</p>}
+            </div>
+          );
+        })}
+        {view === "summary" && (
+          <div>
+            <div style={{ background: CARD, border: "1px solid " + BOR, borderRadius: 12, padding: 18, marginBottom: 16 }}>
+              <p style={{ color: MID, fontSize: 13, marginBottom: 14 }}>{wDates.filter(d => jnl[d]).length} entries this week</p>
+              <Btn onClick={gen} disabled={loading} v="vio">{loading ? "✦ Generating…" : "✦ Generate Weekly Summary"}</Btn>
+            </div>
+            {sum && <div style={{ background: "rgba(255,122,0,.06)", border: "1px solid rgba(139,127,255,.22)", borderRadius: 12, padding: 20 }}><FL>Weekly Summary</FL><p style={{ lineHeight: 1.8, whiteSpace: "pre-wrap", fontSize: 14 }}>{sum}</p></div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// ROOT
+// ═════════════════════════════════════════════════════════════════════
+const TABS = [
+  { id: "home",     label: "Home",        vial: true },
+  { id: "planner",  label: "Planner",     icon: "📅" },
+  { id: "habits",   label: "Habits",      icon: "✅" },
+  { id: "tasks",    label: "Tasks",       icon: "📋" },
+  { id: "gym",      label: "Gym",         icon: "🏋️" },
+  { id: "bball",    label: "Basketball",  icon: "🏀" },
+  { id: "cals",     label: "Calories",    icon: "🔥" },
+  { id: "recovery", label: "Recovery",    icon: "🛌" },
+  { id: "metrics",  label: "Metrics",     icon: "📈" },
+  { id: "prs",      label: "PRs",         icon: "🏆" },
+  { id: "film",     label: "Film Room",   icon: "🎬" },
+  { id: "reflect",  label: "Reflections", icon: "📓" },
+];
+
+const PANELS = { planner: Planner, habits: Habits, tasks: Tasks, gym: Gym, bball: Bball, cals: Cals, recovery: Recovery, metrics: Metrics, prs: PRsPage, film: Film, reflect: Reflect };
+
+export default function App() {
+  const [tab, setTab] = useState("home");
+  const go = useCallback((id) => setTab(id), []);
+  const Panel = PANELS[tab];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: BG, color: TEXT, fontFamily: "'DM Sans','Segoe UI',sans-serif", overflow: "hidden" }}>
+      <style>{[
+        "@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&display=swap');",
+        "*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }",
+        "html,body,#root { height:100%; overflow:hidden; }",
+        "::-webkit-scrollbar { width:3px; height:3px; }",
+        "::-webkit-scrollbar-track { background:" + SURF + "; }",
+        "::-webkit-scrollbar-thumb { background:" + LIME + "; border-radius:2px; }",
+        "button:hover { opacity:0.88; }",
+        "input::placeholder, textarea::placeholder { color:#5a4422; }",
+        "option { background:#181200; color:#ffffff; }",
+      ].join(" ")}</style>
+
+      {/* nav bar */}
+      <div style={{ background: SURF, borderBottom: "1px solid " + BOR, display: "flex", alignItems: "stretch", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 18px", borderRight: "1px solid " + BOR, flexShrink: 0 }}>
+          <Vial size={26} />
+          <div>
+            <div style={{ fontFamily: "monospace", fontWeight: 700, fontSize: 13, letterSpacing: "0.08em", background: "linear-gradient(90deg,#ff7a00,#ffcc00,#ff7a00)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>IN THE LAB</div>
+            <div style={{ color: LOW, fontSize: 9, marginTop: 1, fontFamily: "monospace" }}>{new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" })}</div>
+          </div>
+        </div>
+        <nav style={{ display: "flex", flex: 1, overflowX: "auto", alignItems: "stretch" }}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "0 13px", minHeight: 48, whiteSpace: "nowrap", background: tab === t.id ? "rgba(255,122,0,.1)" : "transparent", borderBottom: "2px solid " + (tab === t.id ? LIME : "transparent"), borderTop: "2px solid transparent", borderLeft: "none", borderRight: "none", color: tab === t.id ? LIME : LOW, fontWeight: tab === t.id ? 700 : 400, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              {t.vial ? <Vial size={13} /> : <span style={{ fontSize: 14 }}>{t.icon}</span>}
+              {t.label}
+            </button>
+          ))}
+        </nav>
+        <div style={{ display: "flex", alignItems: "center", padding: "0 14px", borderLeft: "1px solid " + BOR, color: LOW, fontSize: 10, fontFamily: "monospace", flexShrink: 0 }}>
+          {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+        </div>
+      </div>
+
+      {/* content */}
+      <div style={{ flex: 1, overflow: "hidden" }}>
+        {tab === "home" ? <Home go={go} /> : <Panel />}
+      </div>
+    </div>
+  );
+}
